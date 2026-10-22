@@ -12,20 +12,23 @@ Hardcoded nodes (locations) - and the player can travel to certain nodes from ce
 #all temperatures in Celcius
 
 MAX_HEALTH = 10
-MAX_FOOD = 8
+MAX_FOOD = 10
 START_BODY_TEMP = 37.0
 FINAL_LOCATION = "Casablanca Desert Fortress"
-SIDEBAR_WIDTH = 26 
+SIDEBAR_WIDTH = 30
 
 #Whether the interface has borders.
 TOP_INFO_BORDERS = "bold red"
 SIDEBAR_BORDERS = "red"
 
-
+# How long each stage takes to pass
+REAL_TIME_PER_STAGE = 0.5
 
 #Hotbar width- affects dialogue box
-DIALOGUE_WIDTH = 60
+DIALOGUE_WIDTH = 80
 HOTBAR_SPACING = 15
+
+USABLE_WIDTH = DIALOGUE_WIDTH - 4 # the usable width in the dialogue box is the dialogue wdith - borders and padding (2 + 2)
 
 #Symbols that may change
 FULL_HEART_SYMBOL = "❤️ "
@@ -38,21 +41,25 @@ EMPTY_FOOD_SYMBOL = "🍽️ "
 #Number of rows for the dialogue box
 DIALOGUE_TEXT_ROWS = 10
 
-'''Note: to print a chunk of messages in order, first append the message you want to self.current_message_block, then use self.log_chunk_to_single_line.
+'''Note: 
 
 To print messages inside the dialogue box, use log().
 
 Finally, to print messages outside (and below) the dialogue box, use print() as normal (for things such as input text.)
 '''
+
+# Importing stuff
 from time import sleep
 from rich import print
 from rich.columns import Columns
 from rich.panel import Panel
 from random import choice, randint, shuffle
 from datetime import date, timedelta
-from rich.console import Console
+from rich.console import Console, Group
 from rich.align import Align
-from rich.console import Group
+import sys
+import math
+import re
 
 # class Player helps store information, and stats of the player
 class Player:
@@ -87,7 +94,7 @@ class Player:
             self.health += amount
 
     def food_increase(self, amount):
-        '''Increase food level by a certain amount, but not over 8.'''
+        '''Increase food level by a certain amount, but not over the maximum.'''
         if amount + self.food_level > MAX_FOOD:
             self.food_level = MAX_FOOD
         else:
@@ -113,8 +120,8 @@ class Game:
     def __init__(self):
         self.player = Player()
         self.day = 1
-        self.date = date.today()
-        self.formatted_date = self.date.strftime("%a, %b %d")
+        self.date = date.today() #starts the date at today's date
+        self.formatted_date = self.date.strftime("%a, %b %d") 
         self.current_stage = 'Morning'
         self.weather = "Clear"
         self.environment_temp = -25.0
@@ -123,8 +130,9 @@ class Game:
         self.distance_left = 3500 #km
 
         #Not game related (directly)
-        self.past_dialogue = [" "] * 5
-        self.current_message_block = []
+        self.past_dialogue = [" "] * 5 #when the game starts, there is no past dialogue
+        self.current_message_block = [] #Preferably don't use the log_chunk thing
+        self.action_menu_open = False
 
         # a dictionary of locations / nodes - to add new locations: -> add name, temp, distance to finish, accessible locations (which is a dictionary)
         self.locations = {"Permafrost Camp" : Location("Permafrost Camp", 3500, -25.0, "A cold, brutal camp with scraps of resources and an abandoned shelter.",
@@ -171,8 +179,6 @@ class Game:
 
                                                 }),
                         }
-                                                  
-                          
         
     def advance_day(self):
         '''Advances the day counter by 1.'''
@@ -185,13 +191,19 @@ class Game:
         self.formatted_date = self.date.strftime("%a, %b %d") #updates the formatted date
         
     def advance_stage(self):
-        '''Advances to the next stage in the day - there are 3 stages in the day - morning, afternoon, and night.'''
+        '''Advances to the next stage in the day - there are 3 stages in the day - morning, afternoon, and night.
+        Advancing a stage has a change to randomise the weather again. Updates the feels like temp as well.'''
         stages = ['Morning', 'Afternoon','Night']
         index = (stages.index(self.current_stage) + 1) % 3 #gets the right index, but makes sure its between 1-3
 
         self.current_stage = stages[index]
         if self.current_stage == "Morning": #if an entire day was skipped (went from Night -> Morning), then advance the day
             self.advance_day()
+
+        if randint(0,2) == 1: #1/3 chance to randomise weather
+            self.randomise_weather()
+
+        self.update_feels_like_temp()
 
     def advance_stages(self, stages):
         '''Advances many stages.'''
@@ -218,7 +230,7 @@ class Game:
 
     def get_weather_symbol(self):
         '''Returns the correct emoji based on current weather.'''
-        symbol_matching = {"Rain":"🌧️ ", "Clear":"🌞", "Cloudy":"☁️ ", "Snowstorm":"🌨️ ", "Strong Winds":"🍃", "Snow":"❄️ ", "Hail":"🧊"} #some emojis have a space after due to a visual bug
+        symbol_matching = {"Rain":"💧", "Clear":"🌞", "Cloudy":"⛅", "Snowstorm":"🏔️", "Strong Winds":"🍃", "Snow":"⛄", "Hail":"🧊"} #some emojis have a space after due to a visual bug
 
         return symbol_matching[self.weather]
 
@@ -254,6 +266,224 @@ class Game:
         '''Accesses a specific detail (e.g. direction, distance_to, stages_needed or requirements) of a destination. Must be done before updating location to destination.'''
         return self.access_destination_info(destination)[specific]
 
+    def rest(self):
+        '''The player rests. Takes one day (3 stages) and food goes down by 1, but health goes up by 3.'''
+
+        # Cutscene - uses environment & time based things to change the message
+        self.log(f"You sleep. (Or at least try to.)")
+        sleep(REAL_TIME_PER_STAGE)
+
+        rest_cutscene_message = self.get_rest_message()
+        self.log(rest_cutscene_message, typewriter=True)
+
+        sleep(3 * REAL_TIME_PER_STAGE)
+
+        # Updating stats
+        self.advance_stages(3) #which also may randomise weather
+        self.player.food_decrease(1)
+        self.player.recover_health(3)
+
+        
+        # More cutscene, but uses the updated info.
+
+        # The phrases said in the cutscene when you wake up
+        weather_wake_phrases = {
+          "Rain": "the dull drumming of freezing rain",
+          "Clear": "pale, blinding sunlight across the permafrost",
+          "Cloudy": "overcast skies",
+          "Snowstorm": "a howling snowstorm blowing snow around",
+          "Strong Winds": "violent gale winds whistling",
+          "Snow": "silent, heavy snowfall",
+          "Hail": "the sharp rattling of hail against the walls",
+      }
+
+        phrase = weather_wake_phrases[self.weather] #by here weather should be updated
+
+        self.log(f"You wake up slightly hungry to {phrase}.", typewriter=True)
+
+        health_status_message = self.get_health_status_message()
+
+        sleep(REAL_TIME_PER_STAGE)
+
+        self.log(f"{health_status_message}")
+
+        self.refresh_screen()
+
+    def get_health_status_message(self):
+        '''Depending on current health, return random messages reflecting that health.'''
+
+        health_messages = {
+
+            # 9 - 10 hearts
+            "full":["You feel [bold green]very[/bold green] good.", 
+                    "Your muscles feel electric and your brain feels sharp.", 
+                    "A passerby looks at you, and compliments your looks today."],
+
+            # 6.5 - 8.5 hearts
+            "healthy":["You stand up confident, though a gust of wind reminds you that its cold.", 
+                       "Your joints feel stiff as you try to move around, but you're holding up fine.", 
+                       "Your body groans, but nothing is wrong."],
+
+            # 3.5 - 6 hearts
+            "injured":["A needle-like pain shoots through your limbs with every sudden movement.",
+                       "Exposed skin starts freezing and stings heavily in the cold.",
+                       "You feel [bold yellow]worn down and battered[/bold yellow].\nYou remind yourself to be careful."],
+
+            # 0.5 - 3 hearts
+            "critical":["Each breath feels like inhaling broken glass shards.\nYour eyes start hallucinating things.",
+                        "A heavy, numb exhaustion drags you back down to the ground.\nYou don't feel refreshed at all.",
+                        "You are [bold red]shivering violently[/bold red] and barely clinging to consciousness."]
+        }
+
+        health = self.player.health
+        
+        if health >= 9:
+            category = "full"
+        elif health >= 6.5:
+            category = "healthy"
+        elif health >= 3.5:
+            category = "injured"
+        else:
+            category = "critical"
+
+        return choice(health_messages[category]) #returns a random message based on the category
+
+    def get_rest_message(self):
+      """Gets a generic, sensory sleep message based on weather or time of day,
+
+      avoiding specific shelter structures or equipment assumptions.
+      """
+
+      # Changes based on weather
+      weather_sleep_messages = {
+          "Snowstorm": [
+              (
+                  "The roar of the blizzard drowns out all thought. You curl in"
+                  " tight, shivering relentlessly as exhaustion takes hold."
+              ),
+              (
+                  "Howling wind drives ice against you from the dark. You shut"
+                  " your eyes and brace against the biting cold."
+              ),
+              (
+                  "The whiteout roars around you. Teeth chattering, you force"
+                  " yourself to lie still until sleep comes."
+              ),
+          ],
+          "Strong Winds": [
+              (
+                  "Violent gusts buffet against you without pause. You tuck"
+                  " your limbs in close to conserve every ounce of warmth."
+              ),
+              (
+                  "The wind howls violently in your ears as you close your eyes"
+                  " against the draft."
+              ),
+              (
+                  "Sharp gales tear through the air. You curl down low,"
+                  " waiting for sleep to pull you under."
+              ),
+          ],
+          "Rain": [
+              (
+                  "Freezing water drips and soaks through to your skin. You"
+                  " shut your eyes, trying to ignore the creeping dampness."
+              ),
+              (
+                  "The steady drumming of icy rain echoes in the dark as your"
+                  " heavy eyelids finally shut."
+              ),
+              (
+                  "Cold moisture chills you to the bone, but sheer exhaustion"
+                  " drags you toward sleep anyway."
+              ),
+          ],
+          "Hail": [
+              (
+                  "Sharp ice pellets clatter all around you. You protect your"
+                  " face and wait out the stinging storm."
+              ),
+              (
+                  "The harsh clatter of falling ice surrounds you in the dark"
+                  " as your body finally yields to fatigue."
+              ),
+          ],
+      }
+
+      # Changes based on time of day
+      stage_sleep_messages = {
+          "Morning": [
+              (
+                  "Exhaustion hits you early. You shut your eyes against the"
+                  " pale morning light and rest."
+              ),
+              (
+                  "The air is bitterly sharp, but heavy fatigue forces you"
+                  " down to sleep."
+              ),
+          ],
+          "Afternoon": [
+              (
+                  "With the day half-spent, fatigue clouds your mind and you"
+                  " drift into a deep slumber."
+              ),
+              (
+                  "The dim afternoon light fades into gray as your body finally"
+                  " gives out to sleep."
+              ),
+          ],
+          "Night": [
+              (
+                  "Sub-zero darkness settles in. You hug your knees tight,"
+                  " listening only to your own frosted breath."
+              ),
+              (
+                  "The nighttime chill bites viciously. You curl into a ball,"
+                  " shivering as sleep pulls you under."
+              ),
+              (
+                  "Darkness brings a brutal freeze. You close your eyes,"
+                  " drifting into uneasy rest."
+              ),
+          ],
+      }
+
+      if self.weather in weather_sleep_messages:
+        return choice(weather_sleep_messages[self.weather])
+
+      return choice(
+          stage_sleep_messages.get(
+              self.current_stage, stage_sleep_messages["Night"]
+          )
+      )
+
+    def update_action_menu_status(self, status):
+        '''Updates the action menu status to open or closed.'''
+        if status in [True, 'Open']:
+            self.action_menu_open = True
+        else:
+            self.action_menu_open = False
+
+    def calculate_num_visual_rows(self, text):
+        '''Calculates, based on the dialogue box width, how many rows a string of text will take up.'''
+
+        # Remove rich colour tags
+        clean_text = re.sub(r"\[.*?\]", "", text)
+
+        visual_rows = 0
+
+        splitted_text = clean_text.split("\n") #splits at new lines
+
+        for paragraph in splitted_text:
+            if len(paragraph) == 0: #if nothing on the line
+                visual_rows += 1
+            else:
+
+                # Each row would take up the length / the available width, but since rows have to be integers, you round up
+                visual_rows += math.ceil(len(paragraph) / USABLE_WIDTH)
+
+        return visual_rows
+
     def travel_input(self, locations_list):
         '''Gets the input for where the user needs to go (either an index or a name). Accounts for error messages and printing layouts. Takes accessible locations list as input.'''
 
@@ -268,8 +498,7 @@ class Game:
         while True: 
             
             #each iteration of the loop REDRAWS the interface, to prevent error messages / prompt messages looking weird
-            self.clear_screen()
-            self.display_interface()
+            self.refresh_screen()
 
             # prompting the user below the dialogue box instead of in it
 
@@ -315,10 +544,7 @@ class Game:
                 error_message = f"Uhh... You can't go to '{desired_location}' from here."
 
             else:
-                error_message = f"'{desired_location}' is not a place on this map."
-
-            
-            
+                error_message = f"'{desired_location}' is not a place on this map."        
 
     def travel(self):
         '''Allow player to select from menu options (based on the current location's available nodes) to travel somewhere. Consumes food based on distance. Updates all variables.'''
@@ -333,18 +559,32 @@ class Game:
         current_location_info = self.access_current_location_info() #This accesses a location instance - meaning attributes of that location can be accessed
         locations_list = list(current_location_info.accessible_locations.keys()) #finds locations accessible from the current location - keys() returns a list of keys in that dictionary
 
+        origin_location = self.current_location
+
         desired_location = self.travel_input(locations_list)
 
-        self.log(f"You chose to go to {desired_location}!")
+        self.log(f"You chose to go to {desired_location}!", typewriter=True)
 
         #get direction and distance and display to user
         direction = self.access_destination_specific(desired_location, "direction_to")
         distance = self.access_destination_specific(desired_location, "distance_to")
 
-        self.log(f"You are heading {direction} for {distance} km.")
+        self.log(f"You are heading {direction} for {distance} km.", typewriter=True)
+
+        # based on the amount of stages needed, wait a proportional amount of time and tell the user you reached the destination
+        stages_needed = self.access_destination_specific(desired_location, "stages_needed")
+        days_needed = round(stages_needed / 3, 2) #round to 2dp
+
+        time_wait = stages_needed * REAL_TIME_PER_STAGE 
+        sleep(time_wait)
+
+        # make it say days if plural, day if not plural
+        plural = 's' if days_needed != 1 else ''
+        
+        self.log(f"You arrived in {desired_location} after {days_needed} day{plural} of travel from {origin_location}.", typewriter=True)
         
         #update their food bar (every stage needed = 1 bar of food consumed)
-        stages_needed = self.access_destination_specific(desired_location, "stages_needed")
+        
         self.player.food_decrease(stages_needed)
 
         # update the day counter / stages
@@ -363,19 +603,24 @@ class Game:
 
     def display_top_info(self):
         '''Within the interface, displays specifically the top row - including the day counter, weather, stage counter, temperature and location.'''
-        top_row = Columns([Panel(f"Day {self.day} | {self.formatted_date}", border_style=TOP_INFO_BORDERS, expand=False),
+        top_row = Columns([Panel(f"Day {self.day} | {self.current_stage} | {self.formatted_date}", border_style=TOP_INFO_BORDERS, expand=False),
                            Panel(f"Currently at {self.current_location}", border_style=TOP_INFO_BORDERS, expand=False),
-                           Panel(f"{self.get_weather_symbol()} {self.environment_temp}°C", width=14, border_style=TOP_INFO_BORDERS, expand=False)])
+                           Panel(f"{self.get_weather_symbol()} {self.feels_like_temp}°C", width=14, border_style=TOP_INFO_BORDERS, expand=False)])
 
         print(top_row)
 
     def display_sidebar(self):
         '''Within the interface, displays the sidebar - which includes the "buttons" to open the inventory, clothing menu and open the actions menu.'''
 
+        if self.action_menu_open == False: #helps user open action menu if not open
+            additional_text = "[dim]\nPress Enter to Open[/dim]"
+        else:
+            additional_text = ""
+
         #set fixed width to make sure it looks good
         sidebar_buttons = [Panel("🎒 Open Inventory    ", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False), 
                            Panel("👔 Open Clothing Menu", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False), 
-                           Panel("🔧 Actions Menu      ", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False)]
+                           Panel(f"🔧 Actions Menu      {additional_text}", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False)]
 
         #prints all of them at once
         print(Align.right(Group(*sidebar_buttons)))
@@ -389,7 +634,7 @@ class Game:
         full_hearts = health // 1
         half_hearts = 1 if health % 1 == 0.5 else 0 #if you are on a decimal half heart health, you have 1 half heart, otherwise u have 0
 
-        empty_hearts = 10 - full_hearts - half_hearts
+        empty_hearts = MAX_HEALTH - full_hearts - half_hearts
 
         hearts_string = empty_hearts * EMPTY_HEART_SYMBOL + half_hearts * HALF_HEART_SYMBOL + full_hearts * FULL_HEART_SYMBOL
 
@@ -398,21 +643,42 @@ class Game:
     def get_food_bar_display(self):
         '''Gets the hotbar's food display and returns it. Must be in increments of 1, not 0.5.'''
 
-        #the variables are the AMOUNT of each food (total = 8)
+        #the variables are the AMOUNT of each food (total = MAX_FOOD)
         full_food = self.player.food_level
-        empty_food = 8 - full_food
+        empty_food = MAX_FOOD - full_food
 
         food_string = empty_food * EMPTY_FOOD_SYMBOL + full_food * FULL_FOOD_SYMBOL 
 
         return food_string
+
+    def get_body_temp_display(self):
+        '''Formats the body temperature thing and returns it so it can be displayed on the hotbar.'''
+        temp = self.player.body_temp
+
+        if temp >= 36.5:
+            colour = "bold green"
+            icon = "🌡️ "
+        elif temp >= 35.0:
+            colour = "bold yellow"
+            icon = "🥶"
+        elif temp >= 33.0:
+            colour = "bold cyan"
+            icon = "🧊"
+        else:
+            colour = "bold magenta"
+            icon = "💀"
+
+        return f"[{colour}]{icon} {temp:.1f}°C[/{colour}]" #adds the right icons and rounds temp to 1dp
 
     def display_hotbar(self):
         '''Within the interface, displays the hotbar (bottom) - which includes the health, food levels, body temperature and symbol.'''
 
         hearts = self.get_health_display()
         food = self.get_food_bar_display()
+        body_temp = self.get_body_temp_display()
 
-        print(f"{hearts}{HOTBAR_SPACING*" "}{food}")
+
+        print(f"{hearts}{HOTBAR_SPACING * ' '}{food}{HOTBAR_SPACING * ' '}{body_temp}")
 
     def display_dialogue_box(self):
         '''Displays the dialogue box within the interface at the bottom, with the 5 most recent messages (from most recent at the top to least at the bottom.)'''
@@ -436,22 +702,50 @@ class Game:
 
         print(dialogue_box)
 
-    def log(self, text, specific_colour=None):
-        '''Logs text into the upcoming record logs to be displayed later.'''
+    def log(self, text, specific_colour=None, typewriter=True, delay=0.02):
+        '''Logs text into the upcoming record logs to be displayed later.
+        If typewriter mode is on, it uses sleep() and displays the messages character by character by refreshing the screen each time - like how a video works.'''
 
+        # For any mode just log into the records as normal
+        
         if specific_colour == None:
             self.record_past_dialogue(text)
         else:
             self.record_past_dialogue(f"[{specific_colour}]{text}[/{specific_colour}]")
 
-    def log_chunk_to_single_line(self):
-        '''Logs a chunk of text as a single log within the records, maintaining the original order. Uses the self.current message block.
+        if not typewriter:
+            return None # ends the function, since if the mode is off we dont need the typewriter
+
+        #Typewriter code
+
+        self.past_dialogue[-1] = "" # makes the message typed empty, so it can start printing char by char
+        self.refresh_screen()
+
+        for character in text:
+            self.past_dialogue[-1] = self.past_dialogue[-1] + (f"[{specific_colour}]{character}[/{specific_colour}]" if specific_colour != None else character)
+            #adds one character, then refreshes the screen after a delay
+            sleep(delay)
+            self.refresh_screen()
+
+    def log_chunk_to_single_line(self, typewriter_mode=False):
+        '''
+        NOTE: Kept just in case, but AVOID using since if you need to do a chunk of text
+        you should just do it below the dialogue box using normal print() statements.
+        
+        
+        
+        
+        Logs a chunk of text as a single log within the records, maintaining the original order. Uses the self.current message block.
         If nothing in current message, do nothing.
-        Single chunk of message still should not exceed the DIALOGUE_TEXT_ROWS.'''
+        Single chunk of message still should not exceed the DIALOGUE_TEXT_ROWS.
+        
+        This will print the text instantly without the typewriter effect, unless specified.
+        
+        '''
         if self.current_message_block == []:
             return None
 
-        self.log("\n".join(self.current_message_block))
+        self.log("\n".join(self.current_message_block), typewriter=typewriter_mode)
         self.current_message_block = [] #clears current message block
 
     def record_past_dialogue(self, text):
@@ -463,11 +757,17 @@ class Game:
         # calculate total amount of lines that our record (self.past_dialogue) currently uses
         total_lines = 0
         for log in self.past_dialogue:
-            total_lines += log.count("\n") + 1 #one row would have no '\n's, so it counts as length 1. 2 rows would have 1 '\n's so length 2 and etc
+            total_lines += self.calculate_num_visual_rows(log)
 
         while total_lines > DIALOGUE_TEXT_ROWS and len(self.past_dialogue) != 0: #loop while our number of lines exceeds the limit and our log isn't empty
             removed_chunk = self.past_dialogue.pop(0)
-            total_lines -= removed_chunk.count("\n") + 1 #same counting system as before
+            total_lines -= self.calculate_num_visual_rows(removed_chunk) #same counting system as before, if you pop the chunk from the list, remove its length from total lines
+
+    def refresh_screen(self):
+        '''Refreshes the screen and updates the interface to represent changes immediately - but doesn't update the turn.
+        Should be placed after every action subroutine (e.g. opening inventory, using item, resting, travelling etc.)'''
+        self.clear_screen()
+        self.display_interface()
 
     def display_interface(self, exclusive=False):
         '''Displays the main game's interface - the top info, sidebar, hotbar, dialogue box.'''
@@ -480,16 +780,86 @@ class Game:
     def get_action(self):
         '''Get the action from the player. (Travel, open inventory, view advanced stats etc). Returns a string.'''
 
-        return "travel" #temporarily
+        #Opens action menu when Enter pressed
+        print("\n[bold red]Press Enter to open Action Menu...[/bold red]")
+        input()
 
+        self.update_action_menu_status("Open")
+
+        # Maps numerical values and text to actions so the player can type a number instead of the whole action thing
+        valid_actions = {
+
+            "1":"travel",
+            "travel":"travel", #may seem redundant but maps the text to the same action
+
+            "2":"inventory",
+            "inventory":"inventory",
+
+            "3":"rest",
+            "rest":"rest",
+
+            "4":"stats",
+            "stats":"stats",
+
+            "5":"close",
+            "close":"close"
+
+        }
+
+        # Similar logic to the travel_input(), uses an indefinite loop but ends using return statements
+
+        error_message = ""
+
+        while True:
+
+            self.refresh_screen()
+
+            # Shows the user the options
+            print("\n[bold yellow]What would you like to do?[/bold yellow]")
+            print("  [1] Travel to a new location")
+            print("  [2] Open Inventory & Gear")
+            print("  [3] Rest / Wait")
+            print("  [4] View Detailed Stats")
+            print("  [5] Close Action Menu")
+
+            if error_message != "": #if there was an error in the last loop:
+                print(f"\n[bold red]{error_message}[/bold red]")
+
+            desired_action = input("\nEnter a choice or number.").strip().lower()
+
+            if desired_action in valid_actions.keys(): #if the action is in the valid actions dictionary
+                return valid_actions[desired_action] #return the requested action
+
+            #otherwise give the error message
+
+            error_message = f"'{desired_action}' is not a valid action. Choose 1-4 or type the command name."
+
+    def open_inventory_menu(self):
+        '''Opens the inventory menu.'''
+        pass #WIP
+
+    def view_detailed_stats(self):
+        '''Opens a menu of detailed stats.'''
         pass #WIP
 
     def do_action(self, action):
         '''Performs the action by calling smaller subroutines'''
+
         if action == "travel":
             self.travel()
 
-        #WIP
+        elif action == "rest":
+            self.rest()
+
+        elif action == "inventory":
+            self.open_inventory_menu()
+
+        elif action == "stats":
+            self.view_detailed_stats()
+
+        elif action == "close":
+            self.update_action_menu_status("Closed")
+            self.refresh_screen()
 
     def update_statistics_to_screen(self):
         '''Update statistics - health, hunger, time of day, day counter etc.'''
@@ -506,9 +876,11 @@ class Game:
         '''
 
         while self.player.is_alive() and self.current_location != FINAL_LOCATION: #while player alive and not at destinatioon
+
+            self.update_action_menu_status("Closed") #screen refreshes so action menu becomes closed
+
             # display interface
-            self.clear_screen()
-            self.display_interface()
+            self.refresh_screen()
 
             # get action (travel, open inventory -> which also comes with further actions, view advanced stats etc)
             action = self.get_action() 
