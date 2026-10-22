@@ -134,6 +134,41 @@ class Game:
         self.current_message_block = [] #Preferably don't use the log_chunk thing
         self.action_menu_open = False
 
+        # Settings - first item in list stores the displayed name, 2nd stores the state
+        self.settings = {
+            "typewriter":{
+                "Display Name":"Typewriter", 
+                "Status":True,
+
+                "Available Options":{
+                    "On":True,
+                    "Off":False
+                }},
+
+
+            "typewriter_speed":{
+                            "Display Name":"Typewriter Speed", 
+                            "Status":'0.02',
+                            
+                            "Available Options":{
+                                "Ultra Fast":0.01,
+                                "Fast":0.02,
+                                "Normal":0.03,
+                                "Slow":0.05,
+                                "Slug":0.08
+                            }},
+
+            "temp_unit":{
+                            "Display Name":"Temperature Unit", 
+                            "Status":"°C",
+                            
+                            "Available Options":{
+                                "Celsius":"°C",
+                                "Fahrenheit":"°F",
+                                "Kelvin":"°K"
+                            }}
+        }
+
         # a dictionary of locations / nodes - to add new locations: -> add name, temp, distance to finish, accessible locations (which is a dictionary)
         self.locations = {"Permafrost Camp" : Location("Permafrost Camp", 3500, -25.0, "A cold, brutal camp with scraps of resources and an abandoned shelter.",
                                                  {"Lakeside Castle Ruins" : 
@@ -179,7 +214,159 @@ class Game:
 
                                                 }),
                         }
+
+    def open_settings_menu(self):
+        '''Open a settings menu to allow user to modify settings.'''
+
+        # Map inputs into setting_keys 
+        valid_settings = {
+
+            "1":"typewriter",
+            "typewriter":"typewriter",
+
+
+            "2":"typewriter_speed",
+            "typewriter speed":"typewriter_speed",
+
+            "3":"temp_unit",
+            "temperature unit":"temp_unit"
+
+        }
+
+        error_message = ""
+
+        while True:
+            self.refresh_screen()
+            print(f"[bold red]Settings[/bold red]\n")
+
+            if error_message != "": #if there is an error message
+                print(f"\n[bold red]{error_message}[/bold red]") #prints error message in red
+
+            for setting_key in self.settings:
+
+                display_name = self.settings[setting_key]["Display Name"]
+                status = self.settings[setting_key]["Status"]
+
+                if status in [True, False]: #if it is a boolean / toggleable
+                     print(self.generate_setting_display(setting_key)) #prints the toggled display
+                else:
+                     print(f"{display_name} - {status}")
+
+            setting_choice = input("\nEnter the setting number or name you want to change.\n").lower().strip()
+
+            if setting_choice in valid_settings.keys():
+                chosen_option = valid_settings[setting_choice] #chosen option is the setting's key
+                break
+
+            error_message = f"That is not a setting you can change."
+
+        self.refresh_screen()
+
+        # Conditions for each setting
+
+        # Get info about the setting (chosen_option is the setting_key)
+        display_name = self.settings[chosen_option]["Display Name"]
+        status = self.settings[chosen_option]["Status"]
+        available_options = self.settings[chosen_option]["Available Options"]
+
+        # Setting 1 type -> for any on / off settings
+
+        if status in [True, False]: # add or statements for any toggleable (true/false) settings
+            self.toggle_setting(chosen_option) #Inverts the setting
+            new_status = self.settings[chosen_option]["Status"]
+
+            status_name = self.find_key_from_valueue(available_options, new_status) #Gets the status name from the status 
+
+            print(f"You toggled {status_name.lower()} {display_name.lower()}. ")
+            
+        else: # Setting 2 type -> string or number (many options) based settings
+
+            error_message = ""
+
+            while True:
+                self.refresh_screen()
+                print(f"[bold red]{display_name}[/bold red]\n")
+
+                if error_message != "": #if there is an error message
+                    print(f"\n[bold red]{error_message}[/bold red]") #prints error message in red
+
+                current_setting_name = "current" #initialise the var
+                print(f"You have the following options:")
+                for option in available_options:
+                    print(f"{option} - {available_options[option]}") #shows the name and the setting
+
+                    if str(status).strip() == str(available_options[option]).strip(): #finds the current setting name
+                        current_setting_name = option
+
+                setting_choice = input("\nEnter the new setting you would like to have. (The setting name or value) \n").strip()
+                origin_status = status
+
+                cleaned_choice = self.clean_value(setting_choice)
+
+                # case-insensitive lookup for matching either the key (e.g. "Fast") or value (e.g. "0.02")
+                matched_key = None
+                for opt_key, opt_value in available_options.items():
+                    if cleaned_choice.lower() == self.clean_value(opt_key):
+                        matched_key = opt_key
+                        break
+                    elif cleaned_choice.lower() == self.clean_value(opt_value):
+                        matched_key = opt_key
+                        break
+
+                if matched_key is not None: # if it matched a valid option
+                    
+                    self.settings[chosen_option]["Status"] = available_options[matched_key] #changes status to the right value
+                    new_value = self.settings[chosen_option]["Status"]
+
+                    print(f"You changed {display_name.lower()} from {current_setting_name.lower()} ({origin_status}) to {matched_key.lower()} ({new_value}).")
+
+                    break #exit loop
+
+                else:
+                    error_message = f"That is not a option you can change to."
+                    
+        # Call the settings menu function again if the user wants to keep adjusting settings
+        sleep(1)
         
+        # self.refresh_screen()
+
+        print("[white]Exit or continue changing settings?[/white] ([bold red][u]E[/u][/bold red]xit / [bold green][u]C[/u][/bold green]ontinue): ", end="")
+        setting_exit = input()
+
+        if setting_exit.upper().strip() == "E":
+            return None # exit
+        else:
+            self.open_settings_menu()
+
+    def clean_value(self, value):
+        '''Removes degree symbol from value.'''
+        return str(value).lower().replace("°", "").replace("deg", "").strip()
+
+    def find_key_from_valueue(self, dictionary, value):
+        '''From a dictionary, it finds the key from a value - provided all values are UNIQUE.
+        Used in the settings menu.'''
+        try:
+            key = list(dictionary.keys())[list(dictionary.values()).index(value)]
+        except:
+            return "No key found"
+        return key
+
+    def toggle_setting(self, setting):
+        '''Works only for enabled / disabled setting types. Toggles them to the opposite version.'''
+
+        self.settings[setting]["Status"] = not self.settings[setting]["Status"] #inverts
+
+    def generate_setting_display(self, setting_key):
+        '''Generates a setting display to be in the settings menu.'''
+
+        setting_name = self.settings[setting_key]["Display Name"]
+
+        status = self.settings[setting_key]["Status"]
+        
+        symbol = "🟢 Enabled" if status else "🔴 Disabled"
+
+        return f"{setting_name} - {symbol}"
+
     def advance_day(self):
         '''Advances the day counter by 1.'''
         self.day += 1
@@ -274,14 +461,33 @@ class Game:
         sleep(REAL_TIME_PER_STAGE)
 
         rest_cutscene_message = self.get_rest_message()
-        self.log(rest_cutscene_message, typewriter=True)
+        self.log(rest_cutscene_message)
 
         sleep(3 * REAL_TIME_PER_STAGE)
 
-        # Updating stats
+        # Updating stats - but stats updated depends on the current food level - if you have no food you don't heal as your body has no energy
+
+        if self.player.food_level >= 6:
+            health_gain = 3
+            food_drain = 1
+        elif self.player.food_level >= 3:
+            health_gain = 1.5
+            food_drain = 1
+        elif self.player.food_level > 0:
+            health_gain = -1.5
+            food_drain = 1
+        else:
+            health_gain = -2
+            food_drain = 0
+
+        
+        if health_gain > 0:
+            self.player.recover_health(health_gain)
+        else:
+            self.player.take_damage(abs(health_gain))
+
+        self.player.food_decrease(food_drain)
         self.advance_stages(3) #which also may randomise weather
-        self.player.food_decrease(1)
-        self.player.recover_health(3)
 
         
         # More cutscene, but uses the updated info.
@@ -299,7 +505,7 @@ class Game:
 
         phrase = weather_wake_phrases[self.weather] #by here weather should be updated
 
-        self.log(f"You wake up slightly hungry to {phrase}.", typewriter=True)
+        self.log(f"You wake up slightly hungry to {phrase}.")
 
         health_status_message = self.get_health_status_message()
 
@@ -563,13 +769,13 @@ class Game:
 
         desired_location = self.travel_input(locations_list)
 
-        self.log(f"You chose to go to {desired_location}!", typewriter=True)
+        self.log(f"You chose to go to {desired_location}!")
 
         #get direction and distance and display to user
         direction = self.access_destination_specific(desired_location, "direction_to")
         distance = self.access_destination_specific(desired_location, "distance_to")
 
-        self.log(f"You are heading {direction} for {distance} km.", typewriter=True)
+        self.log(f"You are heading {direction} for {distance} km.")
 
         # based on the amount of stages needed, wait a proportional amount of time and tell the user you reached the destination
         stages_needed = self.access_destination_specific(desired_location, "stages_needed")
@@ -581,7 +787,7 @@ class Game:
         # make it say days if plural, day if not plural
         plural = 's' if days_needed != 1 else ''
         
-        self.log(f"You arrived in {desired_location} after {days_needed} day{plural} of travel from {origin_location}.", typewriter=True)
+        self.log(f"You arrived in {desired_location} after {days_needed} day{plural} of travel from {origin_location}.")
         
         #update their food bar (every stage needed = 1 bar of food consumed)
         
@@ -605,7 +811,7 @@ class Game:
         '''Within the interface, displays specifically the top row - including the day counter, weather, stage counter, temperature and location.'''
         top_row = Columns([Panel(f"Day {self.day} | {self.current_stage} | {self.formatted_date}", border_style=TOP_INFO_BORDERS, expand=False),
                            Panel(f"Currently at {self.current_location}", border_style=TOP_INFO_BORDERS, expand=False),
-                           Panel(f"{self.get_weather_symbol()} {self.feels_like_temp}°C", width=14, border_style=TOP_INFO_BORDERS, expand=False)])
+                           Panel(f"{self.get_weather_symbol()} {self.temperature_convert(self.feels_like_temp, self.settings["temp_unit"]["Status"])}", width=14, border_style=TOP_INFO_BORDERS, expand=False)])
 
         print(top_row)
 
@@ -668,7 +874,7 @@ class Game:
             colour = "bold magenta"
             icon = "💀"
 
-        return f"[{colour}]{icon} {temp:.1f}°C[/{colour}]" #adds the right icons and rounds temp to 1dp
+        return f"[{colour}]{icon} {self.temperature_convert(temp, self.settings["temp_unit"]["Status"])}[/{colour}]" #adds the right icons and rounds temp to 1dp
 
     def display_hotbar(self):
         '''Within the interface, displays the hotbar (bottom) - which includes the health, food levels, body temperature and symbol.'''
@@ -702,11 +908,15 @@ class Game:
 
         print(dialogue_box)
 
-    def log(self, text, specific_colour=None, typewriter=True, delay=0.02):
+    def log(self, text, specific_colour=None):
         '''Logs text into the upcoming record logs to be displayed later.
         If typewriter mode is on, it uses sleep() and displays the messages character by character by refreshing the screen each time - like how a video works.'''
 
         # For any mode just log into the records as normal
+
+        typewriter = self.settings["typewriter"]["Status"] #grabs from settings instead.
+
+        delay = float(self.settings["typewriter_speed"]["Status"]) #grabs from settings
         
         if specific_colour == None:
             self.record_past_dialogue(text)
@@ -727,13 +937,22 @@ class Game:
             sleep(delay)
             self.refresh_screen()
 
-    def log_chunk_to_single_line(self, typewriter_mode=False):
+    def temperature_convert(self, temp_c, unit):
+        '''Converts temperatures from Celcius.'''
+
+        if "F" in unit:
+            temp_f = temp_c * 9/5 + 32
+            return f"{temp_f:.1f}°F"
+        elif "K" in unit:
+            temp_k = temp_c + 273.15
+            return f"{temp_k:.1f}°K"
+        else:
+            return f"{temp_c:.1f}°C"
+
+    def log_chunk_to_single_line(self):
         '''
         NOTE: Kept just in case, but AVOID using since if you need to do a chunk of text
         you should just do it below the dialogue box using normal print() statements.
-        
-        
-        
         
         Logs a chunk of text as a single log within the records, maintaining the original order. Uses the self.current message block.
         If nothing in current message, do nothing.
@@ -745,7 +964,7 @@ class Game:
         if self.current_message_block == []:
             return None
 
-        self.log("\n".join(self.current_message_block), typewriter=typewriter_mode)
+        self.log("\n".join(self.current_message_block))
         self.current_message_block = [] #clears current message block
 
     def record_past_dialogue(self, text):
@@ -801,7 +1020,10 @@ class Game:
             "4":"stats",
             "stats":"stats",
 
-            "5":"close",
+            "5":"settings",
+            "settings":"settings",
+
+            "6":"close",
             "close":"close"
 
         }
@@ -820,7 +1042,8 @@ class Game:
             print("  [2] Open Inventory & Gear")
             print("  [3] Rest / Wait")
             print("  [4] View Detailed Stats")
-            print("  [5] Close Action Menu")
+            print("  [5] Open Settings")
+            print("  [6] Close Action Menu")
 
             if error_message != "": #if there was an error in the last loop:
                 print(f"\n[bold red]{error_message}[/bold red]")
@@ -856,6 +1079,9 @@ class Game:
 
         elif action == "stats":
             self.view_detailed_stats()
+
+        elif action == "settings":
+            self.open_settings_menu()
 
         elif action == "close":
             self.update_action_menu_status("Closed")
