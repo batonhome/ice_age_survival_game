@@ -41,6 +41,26 @@ EMPTY_FOOD_SYMBOL = "🍽️ "
 #Number of rows for the dialogue box
 DIALOGUE_TEXT_ROWS = 10
 
+# the mapping of colours for rarity 
+RARITY_COLORS = {
+    "Common": "cyan",
+    "Uncommon": "green",
+    "Rare": "dark_orange",
+    "Epic": "purple",
+    "Legendary": "yellow",
+    "Unique": "pink",
+    "Quest Reward": "bold red",
+    "Quest Special": "bold red",
+    "Quest Item": "gold"
+}
+
+# Inventory limits of both inventories
+BACKPACK_LIMIT = 8
+SATCHEL_LIMIT = 30
+
+# How much health you get when eating a food with a certain food gain value
+FOOD_TO_HEALTH_CONVERSION = 0.5 #50%
+
 '''Note: 
 
 To print messages inside the dialogue box, use log().
@@ -67,8 +87,25 @@ class Player:
         self.health = MAX_HEALTH
         self.food_level = MAX_FOOD
         self.body_temp = START_BODY_TEMP
-        self.inventory = ["Canned tuna", "Match"]
-        self.clothing = [None, "Nike t-shirt", None, "Flip flops"]
+
+        # Smaller fixed slot amount, but for regular survival items. (backpack)
+        self.backpack = [
+            Item("Can of Tuna", "A regular old can of tuna. Reliable, but has questionable taste.", "Common", "Food", 1, 1, 1, is_quest_item=False, important_information={"Food": 3.0}),
+            Item("Box of Dry Matches", "A handy box of matches that surprisingly still works. Used only in dire situations.", "Uncommon", "Tool", 10, 10, 1, is_quest_item=False)
+        ]
+
+        # Fixed slot amount, but for quest items or items that shouldn't be destroyed
+        self.satchel = [
+            Item("Xavier's Wax-Sealed Note", "A sealed note Xavier gave to you as he died. Opening it is not a good idea…", "Quest Special", "Quest", 1, 1, 1, is_quest_item=True, important_information={"seal_intact": True}),
+            Item("Field Survey Slate & Slate Pen", "Made of anodized titanium. Survives years of usage and apparently impossible to burn.", "Unique", "Quest", 1, 1, 1, is_quest_item=True, important_information={"indestructible": True}),
+            Item("Crumpled Route List", "Given to you right before Xavier swallowed the aluminium pen. A much needed guide in this environment.", "Quest Special", "Quest", 1, 1, 1, is_quest_item=True, important_information={"unlocked_stage": 1})
+        ]
+
+        self.clothing = [None, 
+                         Item("Ragged T-Shirt", "A black T-shirt with noticeable wear and tear. Feels a bit sketchy to put on.", "Common", "Clothing Top", 200, 200, 1, important_information={"Warmth":0.03}),
+                         Item("Torn Black Jeans", "A pair of bleak jeans gifted by Xavier. It has been through a long journey already.", "Common", "Clothing Bottom", 150, 150, 1, important_information={"Warmth": 0.015}),
+                          Item("Flip Flops", "Some rubber flip flops Xavier bought at a gift shop by the beach back before the Ice Age.", "Common", "Clothing Shoes", 50, 50, 1, important_information={"Warmth": 0.005})
+                         ]
 
     def take_damage(self, amount):
         '''Inflicts a certain amount of damage, reducing health. Does not allow health to go below 0.'''
@@ -115,7 +152,64 @@ class Location:
         
         # a dictionary with the accessible location with a nested dictionary to show more info (Distance to that location, the direction, the stages of the day taken, and the requirements)
         self.accessible_locations = accessible_locations 
+
+class Item:
+    # Some things default to default states
+    def __init__(self, item_name, description, rarity, item_type, max_durability=1, current_durability=1, quantity_remaining=1, is_quest_item=False, important_information=None):
+        # The normal things needed for an item
+        self.item_name = item_name
+        self.description = description
+        self.rarity = rarity
+        self.item_type = item_type
+
+        self.max_durability = max_durability
+        self.current_durability = current_durability # or uses for a consumable
+
+        self.quantity_remaining = quantity_remaining
         
+
+        self.is_quest_item = is_quest_item # if yes, it cannot be discarded and it is placed into the 30 slot inventory
+
+
+        # makes sure each item gets a separate dictionary
+        self.important_information = important_information if important_information is not None else {} #stores special states for items (like whether the note has been tampered or not)
+
+    def return_coloured_name(self, item):
+        '''Returns a coloured version of the item name based on its rarity.'''
+        colour = RARITY_COLORS.get(item.rarity, "white") #fallback becomes white
+        return f"[{colour}]{self.item_name}[/{colour}]"
+
+    def reduce_durability(self, amount):
+        '''Reduces the durability or uses of that item by a certain amount.'''
+
+        # decrement while maintaining above 0
+        self.current_durability = max(0, self.current_durability - amount)
+
+    def get_durability_display(self):
+        '''Gets the durability display with a colour.'''
+
+        if self.max_durability <= 0: #prevent div by 0
+            return "[dim]N/A[/dim]"
+
+        percentage_durability = self.current_durability / self.max_durability
+
+        if percentage_durability >= 0.75:
+            colour = "bold green"
+        elif percentage_durability >= 0.50:
+            colour = "yellow"
+        elif percentage_durability >= 0.25:
+            colour = "dark_orange"
+        else:
+            colour = "dim red" 
+
+        # Returns the colour version of the durability
+        return f"[{colour}]{self.current_durability}/{self.max_durability}[/{colour}]" 
+
+    def get_stat(self, stat_name, fallback_value):
+        '''Returns a stat of an item from important information (IF IT EXISTS). Otherwise, return a fallback value.'''
+
+        return self.important_information.get(stat_name, fallback_value)
+
 class Game:
     def __init__(self):
         self.player = Player()
@@ -144,7 +238,6 @@ class Game:
                     "On":True,
                     "Off":False
                 }},
-
 
             "typewriter_speed":{
                             "Display Name":"Typewriter Speed", 
@@ -887,16 +980,16 @@ class Game:
         print(f"{hearts}{HOTBAR_SPACING * ' '}{food}{HOTBAR_SPACING * ' '}{body_temp}")
 
     def display_dialogue_box(self):
-        '''Displays the dialogue box within the interface at the bottom, with the 5 most recent messages (from most recent at the top to least at the bottom.)'''
+        '''Displays the dialogue box within the interface at the bottom, with the 5 most recent messages (from most recent at the bottom to least at the top.)'''
 
         # reverses the past dialogue (to make it go from recent at lower indexes)
-        lines = self.past_dialogue[::-1][:DIALOGUE_TEXT_ROWS]
+        lines = self.past_dialogue[-DIALOGUE_TEXT_ROWS:]
 
         styled_lines = []
 
         #style the most recent like bold white and everything else gray
         for index, line in enumerate(lines):
-            if index == 0: #if most recent
+            if index == len(lines) - 1: #if most recent (at the bottom)
                 styled_lines.append(f"[bold white]{line}[/bold white]")
             else:
                 styled_lines.append(f"[dim]{line}[/dim]")
@@ -1059,12 +1152,320 @@ class Game:
 
     def open_inventory_menu(self):
         '''Opens the inventory menu.'''
-        pass #WIP
+
+        slot_names = ["Head", "Torso", "Legs", "Feet"]
+
+        error_message = ""
+
+        while True:
+            self.refresh_screen() #for each input you first refresh the screen
+
+            if error_message != "": #if there was an error, display it
+                print(f"\n[bold red]{error_message}[/bold red]\n") #prints error message in red
+
+            # This section displays warmth and the current clothing
+
+            print(f"[underline][bold red]Current clothing and inventory[/bold red][/underline]")
+            
+            current_clothing = self.player.clothing
+
+            total_warmth = 0
+
+            for slot_name, clothing_item in zip(slot_names, current_clothing):
+
+                # Display
+
+                if clothing_item is not None:
+                    clothing_item_display = clothing_item.return_coloured_name(clothing_item)
+
+                    # Warmth - add clothing warmth to total if there is an item
+                    total_warmth += clothing_item.get_stat("Warmth", 0)
+
+                else: # if there is no clothing item in a slot
+                    clothing_item_display = "[dim]Empty[/dim]"
+
+                print(f"   {slot_name}: {clothing_item_display}")
+
+            print(f"[red]Total Warmth:[/red] {total_warmth*100:.1f}%")
+
+            # Backpack
+
+            backpack_items_quantity = len(self.player.backpack)
+
+            backpack_items = self.player.backpack
+
+            # Displays used slots
+            print(f"\n[underline]Backpack: {backpack_items_quantity}/{BACKPACK_LIMIT} slots [red]used[/red].[/underline]\n")
+
+            for index, backpack_item in enumerate(backpack_items):
+
+                display_number = index + 1
+
+                backpack_item_display = backpack_item.return_coloured_name(backpack_item)
+
+                durability_display = backpack_item.get_durability_display()
+
+                print(f"[{display_number}] - {backpack_item_display} {durability_display}")
+
+            # Get the maximum display from the first loop
+
+            maximum_index = len(self.player.backpack)
+
+            # Satchel
+
+            satchel_items_quantity = len(self.player.satchel)
+
+            satchel_items = self.player.satchel
+
+            print(f"\n[underline]Satchel: {satchel_items_quantity}/{SATCHEL_LIMIT} slots [red]used[/red].[/underline]\n")
+
+            for index, satchel_item in enumerate(satchel_items):
+
+                display_number = index + maximum_index + 1 #adds maximum index to continue counting
+
+                satchel_item_display = satchel_item.return_coloured_name(satchel_item)
+
+                durability_display = satchel_item.get_durability_display()
+
+                print(f"[{display_number}] - {satchel_item_display} {durability_display}")
+
+
+
+            # Selection of items
+
+            # temporarily combine the items into one big inventory so that choosing an item is easier
+            all_inventory_items = self.player.backpack + self.player.satchel
+
+            desired_index = input("\nEnter the number of the item you want to select (or enter E to exit).\n").upper()
+
+            if desired_index.upper() == 'E':
+                self.refresh_screen() #refresh to remove everything
+                return None #exit loop and menu
+
+            try: #check if it is an integer
+                desired_index = int(desired_index)
+
+            except:
+                error_message = f"That is not a number."
+                continue #go to next loop
+
+            if 1 <= desired_index <= len(all_inventory_items): #this uses 1 based index since it is a UI
+                desired_index -= 1 #convert to 0-indexing
+                desired_item = all_inventory_items[desired_index]
+                break #exit loop only
+
+        # At this point the item should be selected along with the 0-indexing index.
+
+        #remove the previous menu and open a new one
+
+        error_message = ""
+
+        while True: #another selection menu
+            self.refresh_screen()
+
+            if error_message != "": #if there was an error, display it
+                print(f"\n[bold red]{error_message}[/bold red]") #prints error message in red
+            
+            if desired_item.item_type == "Food":
+                print(f"[1] Eat / Consume")
+                print(f"[2] Discard")
+                print(f"[E] Exit item menu")
+
+                option = input(f"Select an option in [].\n").strip()
+
+                if option == "1":
+                    health_increase = math.floor(desired_item.get_stat("Food", 0) * FOOD_TO_HEALTH_CONVERSION)
+                    self.player.food_increase(desired_item.get_stat("Food", 0))
+
+                    self.player.recover_health(health_increase) #recovers health based on conversion
+
+                    backpack_index = self.player.backpack.index(desired_item)
+
+                    if desired_item.quantity_remaining == 1:
+                        self.player.backpack.remove(desired_item) #remove from inventory if only have 1
+                        self.refresh_screen() #since item is gone
+                        break
+
+                    else: #decrease qty by 1
+                        self.player.backpack[backpack_index].quantity_remaining -= 1
+                        break
+
+                elif option == "2":
+                    print(f"Your hand wants to throw away the food. Your mind stops you. Your hand stuns, and you stop.")
+                    sleep(2.0)
+                    break #get to other menu
+
+                elif option.upper() == "E":
+                    break #exit loop to head to other menu
+
+                else:
+                    error_message = "Sorry, that is not an option."
+                    continue #next loop
+
+            elif "Clothing" in desired_item.item_type: # IF any type of clothing
+
+                print(f"[1] Equip")
+                print(f"[E] Exit item menu")
+
+                option = input(f"Select an option in [].\n").strip()
+
+                if option == "1":
+                    backpack_index = self.player.backpack.index(desired_item)
+
+                    # map the clothing to correct spot
+                    slot_map = {
+                        "Clothing Head": 0,
+                        "Clothing Top": 1,
+                        "Clothing Bottom": 2,
+                        "Clothing Shoes": 3
+                    }
+
+                    clothing_slot_index = slot_map.get(desired_item.item_type, 1)
+
+                    if self.player.clothing[clothing_slot_index] == None: #if empty slot, just equip item, remove from inventory
+                        self.player.clothing[clothing_slot_index] = desired_item
+
+                        if desired_item.quantity_remaining == 1:
+                            self.player.backpack.remove(desired_item) #remove if only one
+                            self.refresh_screen() #since item is gone
+                            break
+
+                        else: #decrease quantity by 1
+                            self.player.backpack[backpack_index].quantity_remaining -= 1
+                            break
+
+                    else: #otherwise add the item back to inventory after removing it, and remove new item from inventory and equip
+                        equipped_clothing = self.player.clothing[clothing_slot_index]
+                        self.add_item_to_inventory(equipped_clothing, "backpack")
+
+                        # swaps it for the desired clothing item
+                        self.player.clothing[clothing_slot_index] = desired_item
+
+                        #remove the clothing item
+                        if desired_item.quantity_remaining == 1:
+                            self.player.backpack.remove(desired_item) #remove if only one
+                            self.refresh_screen() #since item is gone
+                            break
+
+                        else: #decrease quantity by 1
+                            self.player.backpack[backpack_index].quantity_remaining -= 1
+                            break
+
+                elif option.upper() == "E":
+                    break #exit loop to head to other menu
+
+                else:
+                    error_message = "Sorry, that is not an option."
+                    continue #next loop
+
+            
+
+            elif desired_item.is_quest_item == True: #is a quest item
+
+                print(f"[1] Use item")
+                print(f"[2] Discard item")
+                print(f"[E] Exit item menu")
+
+                option = input(f"Select an option in [].\n").strip()
+
+                if option == "1":
+                    self.quest_items_routing(desired_item) #a function that takes a quest item and routes it to generate each item's custom menu
+
+
+                    #when routing finished, just exit the inventory
+                    self.refresh_screen()
+                    return None #exit
+
+                elif option == "2":
+                    error_message = "[bold red]Your survival instincts prevent you from discarding vital quest items."
+                    continue
+
+                elif option.upper() == "E":
+                    break
+
+                else:
+                    error_message = "Sorry, that is not an option."
+                    continue #next loop
+
+            elif desired_item.item_type in ["Tool", "Utility"]:
+
+                print(f"[1] Use item")
+                print(f"[2] Discard 1 of the item")
+                print(f"[E] Exit item menu")
+
+                option = input(f"Select an option in [].\n").strip()
+
+                if option == "1":
+                    print(f"Ooh... Seems like you can't use this item until important cutscenes. Unfortunate.")
+                    break # goes to more options
+
+                elif option == "2":
+                    #remove the item
+                    if desired_item.quantity_remaining == 1:
+                        self.player.backpack.remove(desired_item) #remove if only one
+                        self.refresh_screen() #since item is gone
+                        break
+
+                    else: #decrease quantity by 1
+                        desired_item.quantity_remaining -= 1
+                        break
+                
+                elif option.upper() == "E":
+                    break
+
+                else:
+                    error_message = "Sorry, that is not an option."
+                    continue #next loop
+
+        #choose to exit at the end
+        print(f"[V] View other items")
+        print(f"[E] Exit inventory")
+
+        print(f"[bold green]What would you like to do next?[/bold green]")
+        new_option = input()
+        
+        if new_option.upper() == "V":
+            return self.open_inventory_menu()
+
+        elif new_option.upper() == "E":
+            self.refresh_screen() #refresh to remove menu
+            return None #exit
+
+        else:
+            print(f"Invalid option - automatically exiting...")
+            sleep(0.8)
+            self.refresh_screen()
+            return None #exit
 
     def view_detailed_stats(self):
         '''Opens a menu of detailed stats.'''
         pass #WIP
 
+    def add_item_to_inventory(self, item, inventory="backpack"):
+        '''Adds an item to a specific inventory. If inventory already contains that item, add 1 to the quantity remaining.'''
+
+        if inventory == "backpack": #if it is a backpack, add it to the backpack IF there is no other copy, otherwise increment the quantity.
+            if item not in self.player.backpack:
+                self.player.backpack.append(item)
+            else:
+                self.player.backpack[self.player.backpack.index(item)].quantity_remaining += 1
+        elif inventory == "satchel":
+            if item not in self.player.satchel:
+                self.player.satchel.append(item)
+            else:
+                self.player.satchel[self.player.satchel.index(item)].quantity_remaining += 1
+        else:
+            raise ValueError("No inventory like this available.")
+
+    def add_items_to_inventory(self, item, quantity, inventory="backpack"):
+        '''Adds many items to one specified inventory.'''
+        for _ in range(quantity):
+            self.add_item_to_inventory(item, inventory)
+
+    def quest_items_routing(self, quest_item):
+        '''For each specific quest item, opens a different quest item menu.'''
+        pass
+           
     def do_action(self, action):
         '''Performs the action by calling smaller subroutines'''
 
