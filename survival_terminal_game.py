@@ -32,17 +32,18 @@ USABLE_WIDTH = DIALOGUE_WIDTH - 4 # the usable width in the dialogue box is the 
 
 #Symbols that may change
 FULL_HEART_SYMBOL = "❤️ "
-HALF_HEART_SYMBOL = "💗 "
+HALF_HEART_SYMBOL = "💗"
 EMPTY_HEART_SYMBOL = "🩶 "
 
-FULL_FOOD_SYMBOL = "🍔"
-EMPTY_FOOD_SYMBOL = "🍽️ "
+FULL_FOOD_SYMBOL = "🍖"
+HALF_FOOD_SYMBOL = "🍗"
+EMPTY_FOOD_SYMBOL = "🦴"
 
 #Number of rows for the dialogue box
-DIALOGUE_TEXT_ROWS = 10
+DIALOGUE_TEXT_ROWS = 15
 
 # the mapping of colours for rarity 
-RARITY_COLORS = {
+RARITY_COLOURS = {
     "Common": "cyan",
     "Uncommon": "green",
     "Rare": "dark_orange",
@@ -60,6 +61,24 @@ SATCHEL_LIMIT = 30
 
 # How much health you get when eating a food with a certain food gain value
 FOOD_TO_HEALTH_CONVERSION = 0.5 #50%
+
+# Maps types of shelters to what body temp they get you up to at maximum
+SHELTER_MAX_TEMPERATURES = {
+    "Good Shelter":37.0,
+    "Decent Shelter":36.0,
+    "Mediocre Shelter":34.0,
+    "Poor Shelter":31.5,
+    "No Shelter": "N/A"
+}
+
+# Temperature drop coefficient
+TEMPERATURE_CHANGE_COEFFICIENT = 0.20 #you drop 20% of temperature between your current temperature and the feels like temperature
+
+# Cutscene Script Actions
+PAUSE = "[pause]"
+SEPARATOR = "[separator]"
+CHOICE_START = "[choice]"
+CHOICE_END = "[/choice]"
 
 '''Note: 
 
@@ -87,6 +106,7 @@ class Player:
         self.health = MAX_HEALTH
         self.food_level = MAX_FOOD
         self.body_temp = START_BODY_TEMP
+        self.hypothermia_status = "None"
 
         # Smaller fixed slot amount, but for regular survival items. (backpack)
         self.backpack = [
@@ -144,11 +164,13 @@ class Player:
         return False
 
 class Location:
-    def __init__(self, name, distance_left, temp, description, accessible_locations):
+    def __init__(self, name, distance_left, temp, description, shelter_status, accessible_locations):
         self.name = name
         self.distance_left = distance_left
         self.temp = temp
         self.description = description
+
+        self.shelter_status = shelter_status
         
         # a dictionary with the accessible location with a nested dictionary to show more info (Distance to that location, the direction, the stages of the day taken, and the requirements)
         self.accessible_locations = accessible_locations 
@@ -176,7 +198,7 @@ class Item:
 
     def return_coloured_name(self, item):
         '''Returns a coloured version of the item name based on its rarity.'''
-        colour = RARITY_COLORS.get(item.rarity, "white") #fallback becomes white
+        colour = RARITY_COLOURS.get(item.rarity, "white") #fallback becomes white
         return f"[{colour}]{self.item_name}[/{colour}]"
 
     def reduce_durability(self, amount):
@@ -210,6 +232,45 @@ class Item:
 
         return self.important_information.get(stat_name, fallback_value)
 
+class Quest:
+    def __init__(self, title, type, description, max_progress, progress_label):
+        self.title = title
+        self.type = type # "Tutorial Quest", "Optional Quest", "Main Quest"
+        self.description = description
+        self.current_progress = 0
+        self.max_progress = max_progress 
+
+        self.progress_label = progress_label #like a string or whatever (e.g. "parts collected", "screws undone", "In progress")
+
+        self.is_completed = False
+
+    def complete_quest(self):
+        '''Updates quest status to completed.'''
+
+        self.is_completed = True
+
+    def advance_progress(self, amount):
+        '''Advances the progress a certain amount.'''
+
+        self.current_progress += amount
+
+        if self.current_progress >= self.max_progress: #if you did the progress needed
+            self.complete_quest()
+            self.progress_label = "[green]Quest Complete![/green]"
+
+    def get_quest_display(self):
+        '''Gets a string for the quest display itself. (E.g. Main Quest: Collect Jeremy's body.)'''
+
+        return f"[bold][yellow]{self.type}[/yellow]\n{self.title}[/bold]"
+
+    def get_progress_display(self):
+        '''Gets a string for the display for your progress. (E.g. 2/5 coins collected)'''
+        if self.progress_label == "In Progress":
+            return f"[dim][yellow]{self.progress_label}[/yellow][dim]"
+
+        else:
+            return f"[[dim][yellow]{self.current_progress}/{self.max_progress} {self.progress_label}[/yellow][/dim]]"
+
 class Game:
     def __init__(self):
         self.player = Player()
@@ -221,12 +282,22 @@ class Game:
         self.environment_temp = -25.0
         self.feels_like_temp = -25.0
         self.current_location = "Permafrost Camp" #player starts at Permafrost Camp
+        self.current_shelter_status = "Poor Shelter"
+
         self.distance_left = 3500 #km
+
+        # Quest
+        self.current_quest = None
+
+        # E-ink slate
+        self.slate_entries = []
 
         #Not game related (directly)
         self.past_dialogue = [" "] * 5 #when the game starts, there is no past dialogue
         self.current_message_block = [] #Preferably don't use the log_chunk thing
         self.action_menu_open = False
+        self.is_resting = False
+        self.is_travelling = False
 
         # Settings - first item in list stores the displayed name, 2nd stores the state
         self.settings = {
@@ -263,7 +334,7 @@ class Game:
         }
 
         # a dictionary of locations / nodes - to add new locations: -> add name, temp, distance to finish, accessible locations (which is a dictionary)
-        self.locations = {"Permafrost Camp" : Location("Permafrost Camp", 3500, -25.0, "A cold, brutal camp with scraps of resources and an abandoned shelter.",
+        self.locations = {"Permafrost Camp" : Location("Permafrost Camp", 3500, -25.0, "A cold, brutal camp with scraps of resources and an abandoned shelter.", "Poor Shelter",
                                                  {"Lakeside Castle Ruins" : 
                                                   {
                                                     "distance_to" : 25,
@@ -283,7 +354,7 @@ class Game:
                         #for each location on the map, add the things above here
 
                         #--------------------------------------------------------------------
-                        "Lakeside Castle Ruins" : Location("Lakeside Castle Ruins", 3400, -24.0, "A castle ruins by the frozen lake. No signs of life here.",
+                        "Lakeside Castle Ruins" : Location("Lakeside Castle Ruins", 3400, -24.0, "A castle ruins by the frozen lake. No signs of life here.", "No Shelter",
                                                  {"Permafrost Camp" : 
                                                   {
                                                     "distance_to" : 25,
@@ -296,7 +367,7 @@ class Game:
                                                 }),
 
                         #--------------------------------------------------------------------
-                        "Icy Car Repair Depot" : Location("Icy Car Repair Depot", 3550, -26.0, "A car repair depot operated by Jeremy, a local survivor. Locals say he's a talent.",
+                        "Icy Car Repair Depot" : Location("Icy Car Repair Depot", 3550, -26.0, "A car repair depot operated by Jeremy, a local survivor. Locals say he's a talent.", "Good Shelter",
                                                  {"Permafrost Camp" : 
                                                   {
                                                     "distance_to" : 65,
@@ -308,7 +379,12 @@ class Game:
                                                 }),
                         }
 
-    def open_settings_menu(self):
+    def get_coloured_name(self, item_name, rarity):
+        '''Returns a coloured version of any name based on its rarity.'''
+        colour = RARITY_COLOURS.get(rarity.title(), "white") #fallback becomes white
+        return f"[{colour}]{item_name}[/{colour}]"
+
+    def open_settings_menu(self, mode="normal"):
         '''Open a settings menu to allow user to modify settings.'''
 
         # Map inputs into setting_keys 
@@ -329,7 +405,10 @@ class Game:
         error_message = ""
 
         while True:
-            self.refresh_screen()
+            if mode == "normal":
+                self.refresh_screen()
+            else:
+                self.clear_screen()
             print(f"[bold red]Settings[/bold red]\n")
 
             if error_message != "": #if there is an error message
@@ -353,7 +432,10 @@ class Game:
 
             error_message = f"That is not a setting you can change."
 
-        self.refresh_screen()
+        if mode == "normal":
+            self.refresh_screen()
+        else:
+            self.clear_screen()
 
         # Conditions for each setting
 
@@ -368,7 +450,7 @@ class Game:
             self.toggle_setting(chosen_option) #Inverts the setting
             new_status = self.settings[chosen_option]["Status"]
 
-            status_name = self.find_key_from_valueue(available_options, new_status) #Gets the status name from the status 
+            status_name = self.find_key_from_value(available_options, new_status) #Gets the status name from the status 
 
             print(f"You toggled {status_name.lower()} {display_name.lower()}. ")
             
@@ -377,7 +459,10 @@ class Game:
             error_message = ""
 
             while True:
-                self.refresh_screen()
+                if mode == "normal":
+                    self.refresh_screen()
+                else:
+                    self.clear_screen()
                 print(f"[bold red]{display_name}[/bold red]\n")
 
                 if error_message != "": #if there is an error message
@@ -427,7 +512,10 @@ class Game:
         setting_exit = input()
 
         if setting_exit.upper().strip() == "E":
-            return None # exit
+            if mode == "normal":
+                return None # exit
+            else:
+                return "Continue"
         else:
             self.open_settings_menu()
 
@@ -435,7 +523,7 @@ class Game:
         '''Removes degree symbol from value.'''
         return str(value).lower().replace("°", "").replace("deg", "").strip()
 
-    def find_key_from_valueue(self, dictionary, value):
+    def find_key_from_value(self, dictionary, value):
         '''From a dictionary, it finds the key from a value - provided all values are UNIQUE.
         Used in the settings menu.'''
         try:
@@ -485,10 +573,88 @@ class Game:
 
         self.update_feels_like_temp()
 
+        # Update body temp
+        self.body_temperature_update()
+
     def advance_stages(self, stages):
         '''Advances many stages.'''
         for _ in range(stages):
             self.advance_stage()
+
+    def body_temperature_update(self):
+        '''Updates your body temperature through a realistic (Newton's Law of cooling) way to slowly make your temperature creep to the FEELs like temperature.'''
+
+        # If you rest, temperature goes down or up by less (15% less)
+        current_coefficient = (TEMPERATURE_CHANGE_COEFFICIENT - 0.15) if self.is_resting or self.is_travelling else TEMPERATURE_CHANGE_COEFFICIENT
+        
+        # first calculate the total warmth of your clothing
+        total_warmth = 0.0
+        for clothing_piece in self.player.clothing:
+            if clothing_piece is not None:
+                total_warmth += clothing_piece.get_stat("Warmth", 0.0)
+
+        # get the quality of your shelter
+        shelter_status = self.get_location_shelter_status()
+
+        # map the shelter quality to your max temperature that you creep to while in a shelter
+        if shelter_status != "No Shelter":
+            shelter_temperature = SHELTER_MAX_TEMPERATURES[shelter_status]
+
+            # heat up (or cool down, if you had a bad shelter) 2x faster than you cool down without a shelter
+
+            temperature_difference = shelter_temperature - self.player.body_temp #positive if the shelter temperature is hotter than body temp, but negative otherwise
+
+            temperature_change = temperature_difference * current_coefficient * 2
+
+            # decreases player temp to match closer to the shelter's temperature
+
+            self.player.body_temp += temperature_change
+
+        else: # Use Newton's cooling law for temperature change - since you have no shelter
+            temperature_difference = abs(self.feels_like_temp - self.player.body_temp)
+            temperature_loss =  (temperature_difference * current_coefficient) * (1.0 - total_warmth)
+
+            self.player.body_temp -= temperature_loss
+
+
+        # Apply hypothermia check to change health
+
+        body_temperature = self.player.body_temp
+
+        if body_temperature >= 36:  
+            self.player.hypothermia_status = "None"
+
+        elif body_temperature >= 35:
+            self.player.hypothermia_status = "Acute"
+            if not (self.is_resting or self.is_travelling): # if player not resting or travelling
+                self.log("You feel slightly hungrier due to your acute hypothermia and slight shivering.")
+            self.player.food_decrease(0.5)
+
+        elif body_temperature >= 32:
+            self.player.hypothermia_status = "Mild"
+            if not (self.is_resting or self.is_travelling): # if player not resting or travelling
+                self.log("You feel slightly hungrier due to your mild hypothermia and shivering.")
+            self.player.food_decrease(1)
+
+        elif body_temperature >= 28:
+            self.player.hypothermia_status = "Severe"
+            if not (self.is_resting or self.is_travelling): # if player not resting or travelling
+                self.log("You check your hands and feet. You have severe frostbite and hypothermia. Ouch!")
+            self.player.take_damage(2)
+
+        else:
+            self.player.hypothermia_status = "Critical"
+            if not (self.is_resting or self.is_travelling): # if player not resting or travelling
+                self.log("You are on the brink of collapse, in critical condition because of the cold.")
+            self.player.take_damage(5)
+
+        if body_temperature > 37.0:
+            self.player.body_temp = 37.0
+
+    def get_location_shelter_status(self):
+        '''Returns the name of the shelter status of your location (Good Shelter, Decent Shelter, Mediocre Shelter, Poor Shelter, No Shelter)'''
+
+        return self.locations[self.current_location].shelter_status
 
     def clear_screen(self):
         '''Clears the screen.'''
@@ -580,8 +746,10 @@ class Game:
             self.player.take_damage(abs(health_gain))
 
         self.player.food_decrease(food_drain)
-        self.advance_stages(3) #which also may randomise weather
 
+        self.is_resting = True
+        self.advance_stages(3) #which also may randomise weather
+        self.is_resting = False
         
         # More cutscene, but uses the updated info.
 
@@ -887,7 +1055,9 @@ class Game:
         self.player.food_decrease(stages_needed)
 
         # update the day counter / stages
+        self.is_travelling = True
         self.advance_stages(stages_needed)
+        self.is_travelling = False
 
         # update their location
         self.update_location(desired_location)
@@ -916,9 +1086,17 @@ class Game:
         else:
             additional_text = ""
 
+        if self.current_quest != None:
+            quest_display = self.current_quest.get_quest_display()
+
+            progress_display = self.current_quest.get_progress_display()
+        else:
+            quest_display = "Quest Status:\n No current quest."
+            progress_display = "----------------------"
+
         #set fixed width to make sure it looks good
-        sidebar_buttons = [Panel("🎒 Open Inventory    ", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False), 
-                           Panel("👔 Open Clothing Menu", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False), 
+        sidebar_buttons = [Panel(f"{quest_display}", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False), 
+                           Panel(f"{progress_display}", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False), 
                            Panel(f"🔧 Actions Menu      {additional_text}", border_style=SIDEBAR_BORDERS, width=SIDEBAR_WIDTH, expand=False)]
 
         #prints all of them at once
@@ -928,25 +1106,27 @@ class Game:
         '''Gets the hotbar's health bar display and returns it. Health can either be at 1 or 0.5 increments.'''
         health = self.player.health
 
-
         #the variables are the AMOUNT of each heart (total = 10)
-        full_hearts = health // 1
+        full_hearts = int(health // 1)
         half_hearts = 1 if health % 1 == 0.5 else 0 #if you are on a decimal half heart health, you have 1 half heart, otherwise u have 0
 
-        empty_hearts = MAX_HEALTH - full_hearts - half_hearts
+        empty_hearts = int(MAX_HEALTH - full_hearts - half_hearts)
 
         hearts_string = empty_hearts * EMPTY_HEART_SYMBOL + half_hearts * HALF_HEART_SYMBOL + full_hearts * FULL_HEART_SYMBOL
 
         return hearts_string
 
     def get_food_bar_display(self):
-        '''Gets the hotbar's food display and returns it. Must be in increments of 1, not 0.5.'''
+        '''Gets the hotbar's food display and returns it. In 0.5 or 1 increments.'''
 
-        #the variables are the AMOUNT of each food (total = MAX_FOOD)
-        full_food = self.player.food_level
-        empty_food = MAX_FOOD - full_food
+        food = self.player.food_level
 
-        food_string = empty_food * EMPTY_FOOD_SYMBOL + full_food * FULL_FOOD_SYMBOL 
+        full_food = int(food // 1)
+        half_food = 1 if food % 1 == 0.5 else 0
+
+        empty_food = int(MAX_FOOD - full_food - half_food)
+
+        food_string = empty_food * EMPTY_FOOD_SYMBOL + half_food * HALF_FOOD_SYMBOL + full_food * FULL_FOOD_SYMBOL
 
         return food_string
 
@@ -1001,7 +1181,7 @@ class Game:
 
         print(dialogue_box)
 
-    def log(self, text, specific_colour=None):
+    def log(self, text, specific_colour=None, force_typewriter=False):
         '''Logs text into the upcoming record logs to be displayed later.
         If typewriter mode is on, it uses sleep() and displays the messages character by character by refreshing the screen each time - like how a video works.'''
 
@@ -1016,7 +1196,7 @@ class Game:
         else:
             self.record_past_dialogue(f"[{specific_colour}]{text}[/{specific_colour}]")
 
-        if not typewriter:
+        if not typewriter and not force_typewriter:
             return None # ends the function, since if the mode is off we dont need the typewriter
 
         #Typewriter code
@@ -1024,8 +1204,14 @@ class Game:
         self.past_dialogue[-1] = "" # makes the message typed empty, so it can start printing char by char
         self.refresh_screen()
 
+        has_markup = "[" in text and "]" in text #check if text has markup codes
+
         for character in text:
-            self.past_dialogue[-1] = self.past_dialogue[-1] + (f"[{specific_colour}]{character}[/{specific_colour}]" if specific_colour != None else character)
+            if specific_colour is not None and not has_markup:
+                self.past_dialogue[-1] += f"[{specific_colour}]{character}[/{specific_colour}]"
+            else:
+                # if it already contains markup tags or has no specific colour, type raw characters cleanly
+                self.past_dialogue[-1] += character
             #adds one character, then refreshes the screen after a delay
             sleep(delay)
             self.refresh_screen()
@@ -1089,67 +1275,6 @@ class Game:
         if not exclusive: # can toggle off printing the display dialogue box
             self.display_dialogue_box()
         
-    def get_action(self):
-        '''Get the action from the player. (Travel, open inventory, view advanced stats etc). Returns a string.'''
-
-        #Opens action menu when Enter pressed
-        print("\n[bold red]Press Enter to open Action Menu...[/bold red]")
-        input()
-
-        self.update_action_menu_status("Open")
-
-        # Maps numerical values and text to actions so the player can type a number instead of the whole action thing
-        valid_actions = {
-
-            "1":"travel",
-            "travel":"travel", #may seem redundant but maps the text to the same action
-
-            "2":"inventory",
-            "inventory":"inventory",
-
-            "3":"rest",
-            "rest":"rest",
-
-            "4":"stats",
-            "stats":"stats",
-
-            "5":"settings",
-            "settings":"settings",
-
-            "6":"close",
-            "close":"close"
-
-        }
-
-        # Similar logic to the travel_input(), uses an indefinite loop but ends using return statements
-
-        error_message = ""
-
-        while True:
-
-            self.refresh_screen()
-
-            # Shows the user the options
-            print("\n[bold yellow]What would you like to do?[/bold yellow]")
-            print("  [1] Travel to a new location")
-            print("  [2] Open Inventory & Gear")
-            print("  [3] Rest / Wait")
-            print("  [4] View Detailed Stats")
-            print("  [5] Open Settings")
-            print("  [6] Close Action Menu")
-
-            if error_message != "": #if there was an error in the last loop:
-                print(f"\n[bold red]{error_message}[/bold red]")
-
-            desired_action = input("\nEnter a choice or number.").strip().lower()
-
-            if desired_action in valid_actions.keys(): #if the action is in the valid actions dictionary
-                return valid_actions[desired_action] #return the requested action
-
-            #otherwise give the error message
-
-            error_message = f"'{desired_action}' is not a valid action. Choose 1-4 or type the command name."
-
     def open_inventory_menu(self):
         '''Opens the inventory menu.'''
 
@@ -1465,7 +1590,68 @@ class Game:
     def quest_items_routing(self, quest_item):
         '''For each specific quest item, opens a different quest item menu.'''
         pass
-           
+
+    def get_action(self):
+        '''Get the action from the player. (Travel, open inventory, view advanced stats etc). Returns a string.'''
+
+        #Opens action menu when Enter pressed
+        print("\n[bold red]Press Enter to open Action Menu...[/bold red]")
+        input()
+
+        self.update_action_menu_status("Open")
+
+        # Maps numerical values and text to actions so the player can type a number instead of the whole action thing
+        valid_actions = {
+
+            "1":"travel",
+            "travel":"travel", #may seem redundant but maps the text to the same action
+
+            "2":"inventory",
+            "inventory":"inventory",
+
+            "3":"rest",
+            "rest":"rest",
+
+            "4":"stats",
+            "stats":"stats",
+
+            "5":"settings",
+            "settings":"settings",
+
+            "6":"close",
+            "close":"close"
+
+        }
+
+        # Similar logic to the travel_input(), uses an indefinite loop but ends using return statements
+
+        error_message = ""
+
+        while True:
+
+            self.refresh_screen()
+
+            # Shows the user the options
+            print("\n[bold yellow]What would you like to do?[/bold yellow]")
+            print("  [1] Travel to a new location")
+            print("  [2] Open Inventory & Gear")
+            print("  [3] Rest / Wait")
+            print("  [4] View Detailed Stats")
+            print("  [5] Open Settings")
+            print("  [6] Close Action Menu")
+
+            if error_message != "": #if there was an error in the last loop:
+                print(f"\n[bold red]{error_message}[/bold red]")
+
+            desired_action = input("\nEnter a choice or number.").strip().lower()
+
+            if desired_action in valid_actions.keys(): #if the action is in the valid actions dictionary
+                return valid_actions[desired_action] #return the requested action
+
+            #otherwise give the error message
+
+            error_message = f"'{desired_action}' is not a valid action. Choose 1-4 or type the command name."
+
     def do_action(self, action):
         '''Performs the action by calling smaller subroutines'''
 
@@ -1488,19 +1674,251 @@ class Game:
             self.update_action_menu_status("Closed")
             self.refresh_screen()
 
-    def update_statistics_to_screen(self):
-        '''Update statistics - health, hunger, time of day, day counter etc.'''
-        pass
+    '''Cutscenes Setup'''
 
+    def singular_action_choice(self, choice_display):
+        '''Makes the user type the singular action choice before moving on.'''
+
+        error_message = ""
+
+        while True:
+            self.refresh_screen()
+
+            if error_message != "": #if there is an error message
+                print(f"\n[bold red]{error_message}[/bold red]\n") #prints error message in red
+            print(f"{choice_display}")
+
+            self.cutscene_cursor_show()
+            option = input()
+            self.cutscene_cursor_hide() 
+
+            if option == "1": # make sure to standaridise the option as 1 if there is only 1 action to be done
+                return None #exit, as valid
+
+            else:
+                error_message = "Not an option available."
+
+    def multi_action_choice(self, choices):
+        '''Displays more than 1 choice and ensures a valid choice selection.'''
+
+        error_message = ""
+        valid_options = [str(i+1) for i in range(len(choices))] #a list of valid numbers to pick
+
+        while True:
+            self.refresh_screen()
+
+            if error_message != "":
+                print(f"\n[bold red]{error_message}[/bold red]\n")
+
+            for choice in choices:
+                print(choice) #display all choices
+
+            self.cutscene_cursor_show()
+            option = input("\nEnter choice: ").strip()
+            self.cutscene_cursor_hide()
+
+            if option in valid_options:
+                return option #exit loop and return option
+
+            else:
+                error_message = f"Invalid option. Please choose an option from 1 to {len(choices)}"
+
+    def log_script(self, script):
+        '''Used for cutscenes. Passing in a list, the function will log from back to front (from max index to index 0.) 
+        Uses a [separator] notation to pause and indicate a new paragraph.
+        Uses a [pause] notation to make the next line an input.
+        Uses both [choice] and [/choice] notation to indicate starting an ending choices.
+        
+        Both [pause] and [choice] create new lines after, so no need to make a SEPARATOR after that.'''
+
+
+        # used for single and multi action choices
+        pause_next_line = False
+        collecting_choices_from_script = False
+        current_choices = []
+        chosen_option = None
+
+        for line in script:
+
+            # gathers the option displays for between [choice] and [/choice]
+            if collecting_choices_from_script:
+                if line.strip().lower() == "[/choice]": #ending option collecting
+                    collecting_choices_from_script = False
+
+                    chosen_option = self.multi_action_choice(current_choices)
+
+                    selected_option = current_choices[int(chosen_option) - 1] #chosen option is the 1 based index
+
+                    self.log(f"{selected_option} - [bold green]Action Selected[/bold green]\n") 
+
+                else:
+                    current_choices.append(line) #adds the line to current choices, but skips printing the line to the dialogue box
+                    continue   
+
+            # detect when you start gathering choices using [choice]
+            if line.strip().lower() == "[choice]":
+                collecting_choices_from_script = True
+                current_choices = [] #reset current choices
+                continue #skip printing "[choice]" literally
+
+            # detects the other notations, or prints the text as normal
+            if line.strip().lower() == "[separator]":
+                self.log("\n")
+                sleep(0.5)
+
+            # If a pause notation is used, it will signal that the next line becomes an input line, that continues the script
+            elif line.strip().lower() == "[pause]":
+                pause_next_line = True
+                continue
+
+            elif pause_next_line:
+                pause_next_line = False
+                
+                choice_display = line
+                self.singular_action_choice(choice_display)
+                self.log(f"{choice_display} - [bold green]Action Selected[/bold green]\n", force_typewriter=True)
+
+            else:    
+                self.log(line, force_typewriter=True)
+                sleep(0.1)
+
+    def cutscene_start_setup(self):
+        '''Sets up everything correctly at the start of a cutscene.'''
+        sleep(1) #to not make previous text instantly go away
+
+        self.past_dialogue = [] #empty out previous dialogue
+
+        self.cutscene_cursor_hide()
+
+        self.refresh_screen() #refresh the screen
+
+    def start_cutscene(self, cutscene_name):
+        '''Calls cutscene setup and calls the right function for the cutscene. Add new cutscenes in here.'''
+
+        self.cutscene_start_setup()
+
+        cutscene_name = cutscene_name.strip().lower()
+
+        if cutscene_name == "xavier startgame cutscene 01":
+            self.xavier_startgame_cutscene_01()
+
+    def add_slate_log(self, title, bullet_1, bullet_2):
+        '''Logs key information inside the slate with a title and two bulletpoints.'''
+
+        title = self.formatted_date + " " + title
+
+        self.slate_entries.append((title, bullet_1, bullet_2))
+
+        self.log(f"\n[bold pink]✦ Field Survey Slate updated: {title}[/bold pink]")
+
+    def cutscene_cursor_hide(self):
+        '''Hides cursor. Used during cutscenes, but RE-ENABLE after an action if the action is during a cutscene.'''
+        Console().show_cursor(False)
+
+    def cutscene_cursor_show(self):
+        '''Shows cursor. Used after cutscenes, or DURING one where you type in actions.'''
+        Console().show_cursor(True)
+
+    '''Actual cutscenes'''
+
+    def xavier_startgame_cutscene_01(self):
+        '''The cutscene from the beginning of the game.'''
+
+
+        #Waking up, the weather, and his hazy memory
+        part_1 = [
+            'Violent winds burst through the ridge, tearing at the nylon connectors of the shelter.',
+            '[cyan]Snow[/cyan] sprays through an open flap, dusting across a man shivering violently on a frozen bean bag.',
+            'His frosted eyes snap open, bloodshot and frantic as his hands claw towards you.',
+
+            PAUSE,
+            "[1] Back away slightly",
+
+            '\"Listen to me... there is very little time. The storm will rip this tent into shreds before night!\"',
+            "\"All cause of some [b]orbital shift[/b]... Earth's tilt drifted in a natural cycle. You can't blame the ice for being there. It's all just physics in this world.\"",
+            "\"My mind... it feels like freezing slush. Can't even remember how long I've been shivering in this tent for. Name's [bold yellow]Xavier[/bold yellow] by the way.\"",
+
+            SEPARATOR,
+            
+            f"\"Expedition 13 dashed south for [b green]Casablanca Desert Fortress[/b green]. Rumoured to be {'30' if 'C' in self.settings['temp_unit']['Status'] else '54'} degrees warmer...\"",
+            "\"Some say there are [orange]geothermal wells[/orange] that warm your hands up and oil wells with infinite supply. Never been there though.\"",
+            "\"You are probably weeks, if not months behind them. I've got no clue though... Can't pinpoint anything with this weather - it's really affecting my memory.\"",
+
+            SEPARATOR,
+            "\"I was alongside them, but can't exactly recall what happened that got me up to this point. There's no point anymore.\"",
+            "\"It doesn't matter if I lost the trail in a whiteout, [i]or if...[/i] if the footsteps stopped waiting for me.\"",
+
+            SEPARATOR,
+            "\"The permafrost camp... it'll be blown clean off the rock by tonight. And my legs are gone. Completely locked solid.\"",
+            "\"Before the frost takes my voice entirely, take what I have left.\"",
+
+            PAUSE,
+            "[1] Step closer and kneel by his bean bag",
+
+            'Xavier\'s stiff, frostbitten fingers drag a heavy envelope from his inner pocket, thrusting it into your chest.',
+            "\"Inside is a note. Sealed with a thick, optical crimson wax. It is your [b red]only credential[/b red] to enter Casablanca.\"",
+            "\"Do not break the seal. Do not read whatever is scribbled inside. If the wax fractures, the gate guards treat you as a corpse.\"",
+
+            SEPARATOR,
+
+            'He unclips a matte-black e-paper display from his belt, its anodized titanium frame catching the dim gloom.',
+            "\"Field Survey Slate. Built to survive nine-hundred degrees. Recharges on a thermal gradient cell anywhere you walk.\"",
+            "\"And a route list. Only shows the first main leg: Valley Camp 02. The rest reveals itself once you hit the checkpoint.\"",
+
+            PAUSE,
+            f"[1] Take the items he gives you:"
+        ]
+
+        self.log_script(part_1)
+
+        self.log(self.get_coloured_name("1 x Field Survey Slate & Slate Pen [Unique]", "Unique"))
+        self.log(self.get_coloured_name("1 x Crumpled Route List [Quest Item]", "Quest Item"))
+        sleep(1.0)
+
+        #the Swallow, Death, and State Setup ---
+        part_2 = [
+            'Xavier\'s head lolls backward against the frozen bean bag, his chest hitching in a shallow, hollow wheeze.',
+            'Right as his jaw slackens, his hand shoots to his collar with terrifying speed.',
+            'He forces a thick, unusually heavy aluminum pen-like with vibrant purple accents deep past his teeth, swallowing it whole in a single, violent convulsion.',
+            'A dry, final rattle echoes from his throat, and his body goes dead weight against the canvas.',
+
+            PAUSE,
+            "[1] Close Xavier's frozen eyes and stand up into the wind."
+        ]
+
+        self.log_script(part_2)
+
+        # add slate and log the quest
+        self.add_slate_log(
+            "XAVIER'S DEATH",
+            "Xavier died of hypothermia; gave wax credentials, Slate, and Route List to reach Casablanca.",
+            "He ingested a thick purple-accented aluminum pen upon death."
+        )
+
+        self.current_quest = Quest(
+            "Reach Icy Car Repair Depot",
+            "Tutorial Quest",
+            "Trek 65 km North-northwest to reach Jeremy's depot.",
+            1,
+            "In Progress"
+        )
+
+        self.cutscene_cursor_show()
+
+    # Template for escape sequences - used for QUOTES in cutscenes "\"Insert text here\"", but otherwise use "" as normal
+    
     def play(self):
         '''The main function to start the game.'''
 
-        '''Main logic:
-        
-        1. For text displayed onto the screen, first log it into the records list.
-        2. After each turn, display it all at once.
-        
-        '''
+        #Removes ability to scroll up or down
+        sys.stdout.write("\x1b[?1049h\x1b[H")
+        sys.stdout.flush()
+
+        # Starting menu
+        self.start_menu()
+
+        # Starting cutscene - Xavier's cutscene
+        self.start_cutscene("xavier startgame cutscene 01")
 
         while self.player.is_alive() and self.current_location != FINAL_LOCATION: #while player alive and not at destinatioon
 
@@ -1515,9 +1933,33 @@ class Game:
             # performs the actual action - by calling functions
             self.do_action(action)
 
-            # update statistics - health, hunger, time of day, day counter etc
-            self.update_statistics_to_screen()
+    def start_menu(self):
+        '''Displays a very basic start menu.'''
 
+        error_message = ""
+
+        while True:
+            self.clear_screen()
+
+            if error_message != "": #if there is an error message
+                print(f"\n[bold red]{error_message}[/bold red]\n") #prints error message in red
+
+            print(f"[bold red]Expedition 13[/bold red]\n")
+
+            print(f"[green][1] Start Game[/green]")
+            print(f"[gray][2] Settings[/gray]")
+
+            option = input("\nEnter an option to start.  ").strip()
+
+            if option == "1":
+                return None #start the game
+
+            elif option == "2":
+                error_message = ""
+                self.open_settings_menu(mode="start_menu")
+
+            else:
+                error_message = f"Invalid option."
 
 if __name__ == "__main__":
   survival_game = Game()
