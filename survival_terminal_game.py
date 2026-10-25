@@ -49,10 +49,10 @@ RARITY_COLOURS = {
     "Rare": "dark_orange",
     "Epic": "purple",
     "Legendary": "yellow",
-    "Unique": "pink",
+    "Unique": "magenta",
     "Quest Reward": "bold red",
     "Quest Special": "bold red",
-    "Quest Item": "gold"
+    "Quest Item": "gold1"
 }
 
 # Inventory limits of both inventories
@@ -299,6 +299,8 @@ class Game:
         self.is_resting = False
         self.is_travelling = False
 
+        self.typewriter_override = False
+
         # Settings - first item in list stores the displayed name, 2nd stores the state
         self.settings = {
             "typewriter":{
@@ -504,7 +506,7 @@ class Game:
                     error_message = f"That is not a option you can change to."
                     
         # Call the settings menu function again if the user wants to keep adjusting settings
-        sleep(1)
+        self.custom_sleep(1)
         
         # self.refresh_screen()
 
@@ -717,12 +719,12 @@ class Game:
 
         # Cutscene - uses environment & time based things to change the message
         self.log(f"You sleep. (Or at least try to.)")
-        sleep(REAL_TIME_PER_STAGE)
+        self.custom_sleep(REAL_TIME_PER_STAGE)
 
         rest_cutscene_message = self.get_rest_message()
         self.log(rest_cutscene_message)
 
-        sleep(3 * REAL_TIME_PER_STAGE)
+        self.custom_sleep(3 * REAL_TIME_PER_STAGE)
 
         # Updating stats - but stats updated depends on the current food level - if you have no food you don't heal as your body has no energy
 
@@ -770,7 +772,7 @@ class Game:
 
         health_status_message = self.get_health_status_message()
 
-        sleep(REAL_TIME_PER_STAGE)
+        self.custom_sleep(REAL_TIME_PER_STAGE)
 
         self.log(f"{health_status_message}")
 
@@ -1043,7 +1045,7 @@ class Game:
         days_needed = round(stages_needed / 3, 2) #round to 2dp
 
         time_wait = stages_needed * REAL_TIME_PER_STAGE 
-        sleep(time_wait)
+        self.custom_sleep(time_wait)
 
         # make it say days if plural, day if not plural
         plural = 's' if days_needed != 1 else ''
@@ -1069,6 +1071,8 @@ class Game:
         self.environment_temp = self.access_current_location_specific("temp") #Location class attribute - not Game class attribute
         self.randomise_weather()
         self.update_feels_like_temp()
+
+        self.check_quest_triggers() # check if you need to end or start any quests at your new location
 
     def display_top_info(self):
         '''Within the interface, displays specifically the top row - including the day counter, weather, stage counter, temperature and location.'''
@@ -1170,7 +1174,7 @@ class Game:
         #style the most recent like bold white and everything else gray
         for index, line in enumerate(lines):
             if index == len(lines) - 1: #if most recent (at the bottom)
-                styled_lines.append(f"[bold white]{line}[/bold white]")
+                styled_lines.append(f"[bold]{line}[/bold]")
             else:
                 styled_lines.append(f"[dim]{line}[/dim]")
 
@@ -1183,7 +1187,7 @@ class Game:
 
     def log(self, text, specific_colour=None, force_typewriter=False):
         '''Logs text into the upcoming record logs to be displayed later.
-        If typewriter mode is on, it uses sleep() and displays the messages character by character by refreshing the screen each time - like how a video works.'''
+        If typewriter mode is on, it uses self.custom_sleep() and displays the messages character by character by refreshing the screen each time - like how a video works.'''
 
         # For any mode just log into the records as normal
 
@@ -1196,7 +1200,7 @@ class Game:
         else:
             self.record_past_dialogue(f"[{specific_colour}]{text}[/{specific_colour}]")
 
-        if not typewriter and not force_typewriter:
+        if not typewriter and not force_typewriter or self.typewriter_override: #overrides typewriter
             return None # ends the function, since if the mode is off we dont need the typewriter
 
         #Typewriter code
@@ -1213,7 +1217,7 @@ class Game:
                 # if it already contains markup tags or has no specific colour, type raw characters cleanly
                 self.past_dialogue[-1] += character
             #adds one character, then refreshes the screen after a delay
-            sleep(delay)
+            self.custom_sleep(delay)
             self.refresh_screen()
 
     def temperature_convert(self, temp_c, unit):
@@ -1417,7 +1421,7 @@ class Game:
 
                 elif option == "2":
                     print(f"Your hand wants to throw away the food. Your mind stops you. Your hand stuns, and you stop.")
-                    sleep(2.0)
+                    self.custom_sleep(2.0)
                     break #get to other menu
 
                 elif option.upper() == "E":
@@ -1558,7 +1562,7 @@ class Game:
 
         else:
             print(f"Invalid option - automatically exiting...")
-            sleep(0.8)
+            self.custom_sleep(0.8)
             self.refresh_screen()
             return None #exit
 
@@ -1574,7 +1578,7 @@ class Game:
                 self.player.backpack.append(item)
             else:
                 self.player.backpack[self.player.backpack.index(item)].quantity_remaining += 1
-        elif inventory == "satchel":
+        elif inventory == "satchel" or item.is_quest_item:
             if item not in self.player.satchel:
                 self.player.satchel.append(item)
             else:
@@ -1674,6 +1678,11 @@ class Game:
             self.update_action_menu_status("Closed")
             self.refresh_screen()
 
+    def custom_sleep(self, duration):
+        '''Sleeps IF self.typewriter_override is off.'''
+        if not self.typewriter_override:
+            sleep(duration)
+
     '''Cutscenes Setup'''
 
     def singular_action_choice(self, choice_display):
@@ -1749,7 +1758,7 @@ class Game:
 
                     selected_option = current_choices[int(chosen_option) - 1] #chosen option is the 1 based index
 
-                    self.log(f"{selected_option} - [bold green]Action Selected[/bold green]\n") 
+                    self.log(f"{selected_option}\n[bold green]Action Selected[/bold green]\n") 
 
                 else:
                     current_choices.append(line) #adds the line to current choices, but skips printing the line to the dialogue box
@@ -1763,8 +1772,8 @@ class Game:
 
             # detects the other notations, or prints the text as normal
             if line.strip().lower() == "[separator]":
-                self.log("\n")
-                sleep(0.5)
+                self.log("")
+                self.custom_sleep(0.5)
 
             # If a pause notation is used, it will signal that the next line becomes an input line, that continues the script
             elif line.strip().lower() == "[pause]":
@@ -1776,15 +1785,15 @@ class Game:
                 
                 choice_display = line
                 self.singular_action_choice(choice_display)
-                self.log(f"{choice_display} - [bold green]Action Selected[/bold green]\n", force_typewriter=True)
+                self.log(f"\n{choice_display}\n[bold green]Action Selected[/bold green]\n", force_typewriter=True)
 
             else:    
                 self.log(line, force_typewriter=True)
-                sleep(0.1)
+                self.custom_sleep(0.1)
 
     def cutscene_start_setup(self):
         '''Sets up everything correctly at the start of a cutscene.'''
-        sleep(1) #to not make previous text instantly go away
+        self.custom_sleep(1) #to not make previous text instantly go away
 
         self.past_dialogue = [] #empty out previous dialogue
 
@@ -1802,6 +1811,9 @@ class Game:
         if cutscene_name == "xavier startgame cutscene 01":
             self.xavier_startgame_cutscene_01()
 
+        elif cutscene_name == "jeremy introduction cutscene 02":
+            self.jeremy_introduction_cutscene_02()
+
     def add_slate_log(self, title, bullet_1, bullet_2):
         '''Logs key information inside the slate with a title and two bulletpoints.'''
 
@@ -1809,7 +1821,7 @@ class Game:
 
         self.slate_entries.append((title, bullet_1, bullet_2))
 
-        self.log(f"\n[bold pink]✦ Field Survey Slate updated: {title}[/bold pink]")
+        self.log(f"\n[bold pink1]✦ Field Survey Slate updated: {title}[/bold pink1]")
 
     def cutscene_cursor_hide(self):
         '''Hides cursor. Used during cutscenes, but RE-ENABLE after an action if the action is during a cutscene.'''
@@ -1819,17 +1831,42 @@ class Game:
         '''Shows cursor. Used after cutscenes, or DURING one where you type in actions.'''
         Console().show_cursor(True)
 
-    '''Actual cutscenes'''
+    '''The following have to be modified / added to create new cutscenes / quest checks.'''
+
+    def check_quest_triggers(self):
+        '''Checks if the player's current location completes, advances or starts a new quest.
+        Add conditions here for TRAVEL only (if player reaches a new location). For action quests, where the player does an action in a location, it can be handled within a cutscene.'''
+
+        if self.current_quest is None:
+            return None #if no quest currently, exit the function
+
+        # Tutorial quest check (check if completed, and start the quest)
+        if self.current_quest.title == "Reach the Icy Car Repair Depot":
+            if self.current_location == "Icy Car Repair Depot": #if quest condition met and complete:
+
+                self.current_quest.advance_progress(1) #this also finishes the quest
+
+                # tell player they finished the tutorial quest
+                self.log("[bold green]✦ Tutorial Complete: You reached the Icy Car Repair Depot.[/bold green]")
+
+                self.custom_sleep(1.5)
+                
+                # call Jeremy's cutscene and start the new quest #1
+                self.start_cutscene("jeremy introduction cutscene 02")
 
     def xavier_startgame_cutscene_01(self):
-        '''The cutscene from the beginning of the game.'''
+        '''The cutscene from the beginning of the game.
+        
+        Xavier describes the reason for the Ice Age, the goal to reach (Casablanca), subtle foreshadowing with the player questioning why he was left behind.
+        He also hands you three quest items.
+        You loot his body after he dies.'''
 
 
-        #Waking up, the weather, and his hazy memory
+        # waking up, weather, memory, and handing over the envelope
         part_1 = [
             'Violent winds burst through the ridge, tearing at the nylon connectors of the shelter.',
             '[cyan]Snow[/cyan] sprays through an open flap, dusting across a man shivering violently on a frozen bean bag.',
-            'His frosted eyes snap open, bloodshot and frantic as his hands claw towards you.',
+            'His frosted eyes snap open, [b red]bloodshot[/b red] and frantic as his hands claw towards you.',
 
             PAUSE,
             "[1] Back away slightly",
@@ -1838,57 +1875,109 @@ class Game:
             "\"All cause of some [b]orbital shift[/b]... Earth's tilt drifted in a natural cycle. You can't blame the ice for being there. It's all just physics in this world.\"",
             "\"My mind... it feels like freezing slush. Can't even remember how long I've been shivering in this tent for. Name's [bold yellow]Xavier[/bold yellow] by the way.\"",
 
+            PAUSE,
+            "[1] Shake his ice cold, shivering hand",
+
+            "\"It's nice to meet you. Though we won't have much time together.\"",
+
+            SEPARATOR,
+
+            "[i]You stare at a clothing tag on his flip flops. It reads in red - [b red]Member of Expedition 14[/b red].[/i]",
+
             SEPARATOR,
             
-            f"\"Expedition 13 dashed south for [b green]Casablanca Desert Fortress[/b green]. Rumoured to be {'30' if 'C' in self.settings['temp_unit']['Status'] else '54'} degrees warmer...\"",
+            f"\"Expedition 14 dashed south for [b green]Casablanca Desert Fortress[/b green]. Rumoured to be {'30' if 'C' in self.settings['temp_unit']['Status'] else '54'} degrees warmer...\"",
             "\"Some say there are [orange]geothermal wells[/orange] that warm your hands up and oil wells with infinite supply. Never been there though.\"",
-            "\"You are probably weeks, if not months behind them. I've got no clue though... Can't pinpoint anything with this weather - it's really affecting my memory.\"",
+            "\"[b]You're part of Expedition 13.[/b] Over the decades, there have been close to [i]sixty[/i] expeditions... thousands of souls trying to march down this frozen corridor.\"",
 
             SEPARATOR,
-            "\"I was alongside them, but can't exactly recall what happened that got me up to this point. There's no point anymore.\"",
-            "\"It doesn't matter if I lost the trail in a whiteout, [i]or if...[/i] if the footsteps stopped waiting for me.\"",
+            "\"Most of them just... vanish. Erased by the weather or something worse out on the trail.\"",
+            "\"Expedition 15 was lost somewhere up in the high mountains—never heard from again. And Expedition 14 left months ago.\"",
 
             SEPARATOR,
-            "\"The permafrost camp... it'll be blown clean off the rock by tonight. And my legs are gone. Completely locked solid.\"",
-            "\"Before the frost takes my voice entirely, take what I have left.\"",
+            "\"The pass... it gets blinding out there. The whiteouts swallow a man whole before he can even blink.\"",
+            "\"I was right behind the squad when the wind hit us like a wall. Visibility dropped to zero in seconds.\"",
+            "\"People started shouting, scattering into the drift... trying to hold onto the sledges, trying not to [cyan]freeze[/cyan].\"",
+            "\"In that kind of whiteout, you lose track of everyone. People get separated. It's easy to get left behind when the storm is howling and everyone's just fighting for their own breath...\"",
+            "\"[i]Or maybe... maybe the group just didn't look back when I stumbled. Hard to tell what's the blizzard's fault and what's just men running from the cold.[/i]\"",
+
+            SEPARATOR,
+
+            "\"I haven't seen a single soul pass through since they marched past this ridge. With the way things are dying out... you and I might be the last.\"",
 
             PAUSE,
             "[1] Step closer and kneel by his bean bag",
 
-            'Xavier\'s stiff, frostbitten fingers drag a heavy envelope from his inner pocket, thrusting it into your chest.',
-            "\"Inside is a note. Sealed with a thick, optical crimson wax. It is your [b red]only credential[/b red] to enter Casablanca.\"",
+            'Xavier\'s stiff, [cyan]frostbitten[/cyan] fingers drag a heavy envelope from his inner pocket, thrusting it into your chest.',
+            "\"Inside is a note. Sealed with a thick, optical [red]crimson[/red] wax seal. It is your [b red]only credential[/b red] to enter Casablanca.\"",
             "\"Do not break the seal. Do not read whatever is scribbled inside. If the wax fractures, the gate guards treat you as a corpse.\"",
 
-            SEPARATOR,
-
-            'He unclips a matte-black e-paper display from his belt, its anodized titanium frame catching the dim gloom.',
-            "\"Field Survey Slate. Built to survive nine-hundred degrees. Recharges on a thermal gradient cell anywhere you walk.\"",
-            "\"And a route list. Only shows the first main leg: Valley Camp 02. The rest reveals itself once you hit the checkpoint.\"",
-
             PAUSE,
-            f"[1] Take the items he gives you:"
+            "[1] Take his note and hold onto it"
         ]
 
         self.log_script(part_1)
 
-        self.log(self.get_coloured_name("1 x Field Survey Slate & Slate Pen [Unique]", "Unique"))
-        self.log(self.get_coloured_name("1 x Crumpled Route List [Quest Item]", "Quest Item"))
-        sleep(1.0)
+        # End the script and add the item to the inventory.
+        note_item = Item("Xavier's Wax-Sealed Note", "A sealed note Xavier gave to you as he died. Opening it is not a good idea…", "Quest Special", "Quest", 1, 1, 1, is_quest_item=True, important_information={"seal_intact": True})
+        self.add_item_to_inventory(note_item, "satchel")
+        self.log(f"[bold green]✦ you add the note to your satchel.[/bold green]")
+        self.custom_sleep(1.0)
 
-        #the Swallow, Death, and State Setup ---
+        # handing over the slate, route list, and backpack
         part_2 = [
-            'Xavier\'s head lolls backward against the frozen bean bag, his chest hitching in a shallow, hollow wheeze.',
-            'Right as his jaw slackens, his hand shoots to his collar with terrifying speed.',
-            'He forces a thick, unusually heavy aluminum pen-like with vibrant purple accents deep past his teeth, swallowing it whole in a single, violent convulsion.',
-            'A dry, final rattle echoes from his throat, and his body goes dead weight against the canvas.',
+            SEPARATOR,
+            'He unclips a matte-black e-paper display from his belt, its anodized titanium frame catching the dim gloom.',
+            f"\"A {self.get_coloured_name('Field Survey Slate & Slate Pen (Unique)', 'Unique')}. Built to survive [red]nine-hundred degrees[/red]. Recharges on a thermal gradient cell anywhere you walk.\"",
+            f"\"And a {self.get_coloured_name('Crumpled Route List (Quest Item)', 'Quest Item')}. Only shows the first main leg you will need to reach: [b]Valley Camp 02[/b]. The rest reveals itself once you hit the checkpoint.\"",
+            "\"Here, take this old canvas backpack too. You're going to need it to haul your gear out of this wasteland.\"",
 
             PAUSE,
-            "[1] Close Xavier's frozen eyes and stand up into the wind."
+            f"[1] Take the backpack and equipment:\n{self.get_coloured_name('1 x Field Survey Slate & Slate Pen (Unique)', 'Unique')}\n{self.get_coloured_name('1 x Crumpled Route List (Quest Item)', 'Quest Item')}"
         ]
 
         self.log_script(part_2)
 
-        # add slate and log the quest
+        # End the script and add the items to the inventory.
+        slate_item = Item("Field Survey Slate & Slate Pen", "Made of anodized titanium. Survives years of usage and apparently impossible to burn.", "Unique", "Quest", 1, 1, 1, is_quest_item=True, important_information={"indestructible": True})
+        route_item = Item("Crumpled Route List", "Given to you right before Xavier swallowed the aluminium pen. A much needed guide in this environment.", "Quest Special", "Quest", 1, 1, 1, is_quest_item=True, important_information={"unlocked_stage": 1})
+        
+        self.add_item_to_inventory(slate_item, "satchel")
+        self.add_item_to_inventory(route_item, "satchel")
+        self.log(f"[bold green]✦ you slide the slate and route list into your satchel, and put on the backpack.[/bold green]")
+        self.custom_sleep(1.0)
+
+        # the swallow, death, and looting beat
+        part_3 = [
+            SEPARATOR,
+            'Xavier\'s head lolls backward against the frozen bean bag, his chest hitching in a shallow, hollow wheeze.',
+            'Right as his jaw slackens, his hand shoots to his collar with terrifying speed.',
+            'He forces a thick, unusually [b]heavy[/b] aluminum pen with [purple]vibrant purple accents[/purple] deep past his teeth, swallowing it whole in a single, violent convulsion.',
+            '[i red]A dry, final rattle echoes from his throat, and his body goes dead weight against the canvas.[/i red]',
+
+            PAUSE,
+            "[1] Loot Xavier's body - strip his shirt, jeans, flip flops, tuna, and matches"
+        ]
+
+        self.log_script(part_3)
+
+        # End the script and add the items to the inventory and equip clothing.
+        tuna_item = Item("Can of Tuna", "A regular old can of tuna. Reliable, but has questionable taste.", "Common", "Food", 1, 1, 1, is_quest_item=False, important_information={"Food": 3.0})
+        matches_item = Item("Box of Dry Matches", "A handy box of matches that surprisingly still works. Used only in dire situations.", "Uncommon", "Tool", 10, 10, 1, is_quest_item=False)
+
+        self.add_item_to_inventory(tuna_item, "backpack")
+        self.add_item_to_inventory(matches_item, "backpack")
+
+        # Add clothing
+        self.player.clothing[1] = Item("Ragged T-Shirt", "A black T-shirt with noticeable wear and tear. Feels a bit sketchy to put on.", "Common", "Clothing Top", 200, 200, 1, important_information={"Warmth": 0.03})
+        self.player.clothing[2] = Item("Torn Black Jeans", "A pair of bleak jeans gifted by Xavier. It has been through a long journey already.", "Common", "Clothing Bottom", 150, 150, 1, important_information={"Warmth": 0.015})
+        self.player.clothing[3] = Item("Flip Flops", "Some rubber flip flops Xavier bought at a gift shop by the beach back before the Ice Age.", "Common", "Clothing Shoes", 50, 50, 1, important_information={"Warmth": 0.005})
+
+        self.log("[bold green]✦ you strip the warm layers off his corpse and add the food and matches to your backpack.[/bold green]")
+
+        self.custom_sleep(1.5)
+
+        # Setup the quest and add the notes to the slate log
         self.add_slate_log(
             "XAVIER'S DEATH",
             "Xavier died of hypothermia; gave wax credentials, Slate, and Route List to reach Casablanca.",
@@ -1896,7 +1985,7 @@ class Game:
         )
 
         self.current_quest = Quest(
-            "Reach Icy Car Repair Depot",
+            "Reach the Icy Car Repair Depot",
             "Tutorial Quest",
             "Trek 65 km North-northwest to reach Jeremy's depot.",
             1,
@@ -1905,7 +1994,117 @@ class Game:
 
         self.cutscene_cursor_show()
 
-    # Template for escape sequences - used for QUOTES in cutscenes "\"Insert text here\"", but otherwise use "" as normal
+    def jeremy_introduction_cutscene_02(self):
+        '''Starts Jeremy's cutscene, him introducing you and asking you to complete his quest.'''
+
+        part_01 = [
+            "The heavy steel sliding door screeches on [cyan]frozen wheels[/cyan] as you shove it shut behind you.",
+            "Inside, the wind dies instantly. The [b]strong[/b] scent of kerosene and coal attacks your nose.",
+            f"The [navy_blue]deep numbness[/navy_blue] of your {self.temperature_convert(self.feels_like_temp, self.settings["temp_unit"]["Status"])} degree hands tingle, as your core temperature begins to rise within the shelter.",
+            "A shadow peeks behind the raised chassis of a [red]red, clearly battered car[/red].",
+
+            PAUSE,
+            "[1] Walk towards the shadow to check it out",
+
+            SEPARATOR,
+
+            "[i]cranking noises[/i]",
+
+            SEPARATOR,
+
+            "The figure suddenly appears from behind the car, clearly surprised anyone made it here.",
+            "\"Oh wow. You entered my car depot very abruptly there. I'm [b yellow]Jeremy[/b yellow].\"",
+            "\"It's nice seeing people around for once. I've not seen any for months now.\"",
+
+            PAUSE,
+            "[1] Tell him it's warm and comfortable in here",
+
+            "[i green]It's so much warmer and more comfortable in here.[/i green]",
+
+            SEPARATOR,
+            "[i]chuckles to himself[/i]",
+            "\"Yeah... if you ignore the kerosene smells. I'm a mechanic from the old days. Been in here since the [cyan]Ice Age[/cyan] started.\"",
+
+            SEPARATOR,
+            
+            "\"I was driving North, back towards my house back when the world was [brown]still normal[/brown].\"",
+            "\"You'd think I'd notice the temperature outside [cyan]dropping[/cyan], but I was too busy watching some [red]YouTube[/red].\"",
+            "\"Didn't even take a glance at the road. Even mechanics and car specialists make mistakes sometimes.\"",
+
+            PAUSE,
+            "[1] Glance over at the red car's engine over there",
+
+            "\"Oh... you're looking at the engine. Well, on the way back, the car crashed into the side of a [dark green]pine tree[dark green].\"",
+            "\"My baby's been missing some components ever since she got [red]damaged[/red]. The piston flew out after I spun out of control, and the internals are scrap.\"",
+
+            PAUSE,
+            "[1] Tell him that you're still a bit cold and hungry",
+
+            "[i green]I still feel a bit numb and chilly. And a bit drained to be honest.[/i green]",
+
+            "[i]Your stomach rumbles[/i]",
+
+            "\"[red]Oh?[/red] You should've told me earlier. Here you go - you can take a few cans of my [yellow1]Clam Corn Soup[/yellow1] from my reserves.\"",
+
+            "[i]Jeremy sighs, and hands them over to you.[/i]",
+
+            f"\"Here ya go - {self.get_coloured_name('2 x Can of Clam Corn Soup (Uncommon)', 'Uncommon')}\"",
+
+            PAUSE,
+            f"[1] Take the {self.get_coloured_name('2 x Can of Clam Corn Soup (Uncommon)', 'Uncommon')}"
+        ]
+
+        self.log_script(part_01)
+
+        soup_item = Item("Can of Clam Corn Soup", "A hearty can of clam and corn soup. Perfect for reminding you when you could actually fish up those clams.", "Uncommon", "Food", 1, 1, 2, is_quest_item=False, important_information={"Food": 2.5})
+
+        self.add_item_to_inventory(soup_item, "backpack")
+
+        part_02 = [
+            "The wind howls outside.",
+
+            SEPARATOR,
+
+            "\"If I'm ever going to drive away and out of this valley, this car ain't gonna cut it.\"",
+            "\"The whole damn engine parts gotta be replaced. That includes [b yellow]one intact machined piston, and two metal connecting rods[/b yellow].\"",
+            "\"I've heard that if you head further north, you might find the components scattered around somewhere.'\"",
+            "\"There's a vehicle crash site near [b cyan]Blizzard Graveyard[/b cyan], and if you go all the way up, the piston can be pulled out somewhere in the abandoned bunker up there. Nobody needs it anyways.\"",
+
+            "Jeremy crosses his arms and looks you in the eye.",
+
+            "\"Bring me those three parts, and I'll make it worth your while. I'll hand over three sealed tins of pink salmon—three full rations each—and a pair of thick wool work trousers that'll keep the wind from biting through your denim.\"",
+
+            "\"[b gold]Oh, and on top of that, I'll give you two items you can pick from for your reward when you head back.\""
+
+            "\"You'll have to retrieve those parts to see what it is that I'm talkin' about.\"",
+
+            SEPARATOR,
+
+            "His hands wander towards the exit door's latch, holding it in the [red]locked[/red] position.",
+
+            SEPARATOR,
+            "\"So... Are you down to help me? It's your call.\"",
+
+            "[i]His hands [b]grip tightly[/b] onto the latch, seemingly forcing you to say yes - or trapping you in with him.",
+
+            PAUSE,
+            "[1] Accept his quest and head north to retreive Jeremy's car parts"
+        
+        ]
+
+        self.log_script(part_02)
+        # Setup the quest
+
+        self.current_quest = Quest(
+            "Retrieve Jeremy's Car Parts",
+            "Main Quest",
+            "Obtain 2 metal connecting rods and one machined piston and return it to Jeremy.",
+            3,
+            "parts collected"
+        )
+
+        self.cutscene_cursor_show()
+    # Template for escape sequences - used for QUOTES in cutscenes "\"Insert quote here\"", but otherwise use "" as normal
     
     def play(self):
         '''The main function to start the game.'''
@@ -1917,8 +2116,9 @@ class Game:
         # Starting menu
         self.start_menu()
 
-        # Starting cutscene - Xavier's cutscene
+        # Start opening cutscene
         self.start_cutscene("xavier startgame cutscene 01")
+        
 
         while self.player.is_alive() and self.current_location != FINAL_LOCATION: #while player alive and not at destinatioon
 
@@ -1957,6 +2157,11 @@ class Game:
             elif option == "2":
                 error_message = ""
                 self.open_settings_menu(mode="start_menu")
+
+            elif option == "Boiling50":
+                print(f"Hidden option unlocked - fast forwarding tutorial.")
+                self.typewriter_override = True #removes typewriter for cutscenes
+                return None
 
             else:
                 error_message = f"Invalid option."
