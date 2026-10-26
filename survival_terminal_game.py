@@ -109,23 +109,9 @@ class Player:
         self.hypothermia_status = "None"
 
         # Smaller fixed slot amount, but for regular survival items. (backpack)
-        self.backpack = [
-            Item("Can of Tuna", "A regular old can of tuna. Reliable, but has questionable taste.", "Common", "Food", 1, 1, 1, is_quest_item=False, important_information={"Food": 3.0}),
-            Item("Box of Dry Matches", "A handy box of matches that surprisingly still works. Used only in dire situations.", "Uncommon", "Tool", 10, 10, 1, is_quest_item=False)
-        ]
-
-        # Fixed slot amount, but for quest items or items that shouldn't be destroyed
-        self.satchel = [
-            Item("Xavier's Wax-Sealed Note", "A sealed note Xavier gave to you as he died. Opening it is not a good idea…", "Quest Special", "Quest", 1, 1, 1, is_quest_item=True, important_information={"seal_intact": True}),
-            Item("Field Survey Slate & Slate Pen", "Made of anodized titanium. Survives years of usage and apparently impossible to burn.", "Unique", "Quest", 1, 1, 1, is_quest_item=True, important_information={"indestructible": True}),
-            Item("Crumpled Route List", "Given to you right before Xavier swallowed the aluminium pen. A much needed guide in this environment.", "Quest Special", "Quest", 1, 1, 1, is_quest_item=True, important_information={"unlocked_stage": 1})
-        ]
-
-        self.clothing = [None, 
-                         Item("Ragged T-Shirt", "A black T-shirt with noticeable wear and tear. Feels a bit sketchy to put on.", "Common", "Clothing Top", 200, 200, 1, important_information={"Warmth":0.03}),
-                         Item("Torn Black Jeans", "A pair of bleak jeans gifted by Xavier. It has been through a long journey already.", "Common", "Clothing Bottom", 150, 150, 1, important_information={"Warmth": 0.015}),
-                          Item("Flip Flops", "Some rubber flip flops Xavier bought at a gift shop by the beach back before the Ice Age.", "Common", "Clothing Shoes", 50, 50, 1, important_information={"Warmth": 0.005})
-                         ]
+        self.backpack = []
+        self.satchel = []
+        self.clothing = [None, None, None, None]
 
     def take_damage(self, amount):
         '''Inflicts a certain amount of damage, reducing health. Does not allow health to go below 0.'''
@@ -301,6 +287,9 @@ class Game:
 
         self.typewriter_override = False
 
+        # Quest specifics
+        self.left_camp_before = False
+
         # Settings - first item in list stores the displayed name, 2nd stores the state
         self.settings = {
             "typewriter":{
@@ -378,7 +367,45 @@ class Game:
                                                     "requirements" : None
                                                  },
 
+                                                 "Blizzard Graveyard" : 
+                                                  {
+                                                    "distance_to" : 15,
+                                                    "direction_to" : "North-northwest",
+                                                    "stages_needed" : 1,
+                                                    "requirements" : None
+                                                 },
+
                                                 }),
+
+                        #--------------------------------------------------------------------
+                        "Blizzard Graveyard" : Location("Blizzard Graveyard", 3600, -27.0, "A haunting, frozen graveyard with hundreds and hundreds of snow covered graves.", "No Shelter",
+                                                    {"Icy Car Repair Depot" : 
+                                                    {
+                                                    "distance_to" : 15,
+                                                    "direction_to" : "South-southeast",
+                                                    "stages_needed" : 1,
+                                                    "requirements" : None
+                                                    },
+
+                                                    "Abandoned Polar Bunker 01" : 
+                                                  {
+                                                    "distance_to" : 45,
+                                                    "direction_to" : "North",
+                                                    "stages_needed" : 2,
+                                                    "requirements" : None
+                                                 },
+                                                }),
+
+                        #--------------------------------------------------------------------
+                        "Abandoned Polar Bunker 01" : Location("Abandoned Polar Bunker 01", 3650, -30.0, "Seemingly abandoned many months ago, though still sturdy and functional.", "Mediocre Shelter",
+                                                    {"Blizzard Graveyard" : 
+                                                     {
+                                                    "distance_to" : 45,
+                                                    "direction_to" : "South",
+                                                    "stages_needed" : 2,
+                                                    "requirements" : None
+                                                },
+                                                })
                         }
 
     def get_coloured_name(self, item_name, rarity):
@@ -1071,6 +1098,9 @@ class Game:
         self.environment_temp = self.access_current_location_specific("temp") #Location class attribute - not Game class attribute
         self.randomise_weather()
         self.update_feels_like_temp()
+
+        if self.current_location != "Permafrost Camp": #to activate xavier's cutscene - update once player has left the spawn
+            self.left_camp_before = True
 
         self.check_quest_triggers() # check if you need to end or start any quests at your new location
 
@@ -1801,19 +1831,6 @@ class Game:
 
         self.refresh_screen() #refresh the screen
 
-    def start_cutscene(self, cutscene_name):
-        '''Calls cutscene setup and calls the right function for the cutscene. Add new cutscenes in here.'''
-
-        self.cutscene_start_setup()
-
-        cutscene_name = cutscene_name.strip().lower()
-
-        if cutscene_name == "xavier startgame cutscene 01":
-            self.xavier_startgame_cutscene_01()
-
-        elif cutscene_name == "jeremy introduction cutscene 02":
-            self.jeremy_introduction_cutscene_02()
-
     def add_slate_log(self, title, bullet_1, bullet_2):
         '''Logs key information inside the slate with a title and two bulletpoints.'''
 
@@ -1832,6 +1849,31 @@ class Game:
         Console().show_cursor(True)
 
     '''The following have to be modified / added to create new cutscenes / quest checks.'''
+
+    def start_cutscene(self, cutscene_name):
+        '''Calls cutscene setup and calls the right function for the cutscene. Add new cutscenes in here.'''
+
+        self.cutscene_start_setup()
+
+        cutscene_name = cutscene_name.strip().lower()
+
+        if cutscene_name == "xavier startgame cutscene 01":
+            self.xavier_startgame_cutscene_01()
+
+        elif cutscene_name == "jeremy introduction cutscene 02":
+            self.jeremy_introduction_cutscene_02()
+
+        elif cutscene_name == "blizzard graveyard jeremy quest cutscene 03":
+            self.blizzard_graveyard_jeremy_quest_cutscene_03()
+
+        elif cutscene_name == "abandoned polar bunker jeremy quest cutscene 04":
+            self.abandoned_polar_bunker_jeremy_quest_cutscene_04()
+
+        elif cutscene_name == "jeremy quest complete cutscene 05":
+            self.jeremy_quest_complete_cutscene_05()
+
+        elif cutscene_name == "permafrost camp return cutscene 06":
+            self.permafrost_camp_return_cutscene_06()
 
     def check_quest_triggers(self):
         '''Checks if the player's current location completes, advances or starts a new quest.
@@ -1853,6 +1895,32 @@ class Game:
                 
                 # call Jeremy's cutscene and start the new quest #1
                 self.start_cutscene("jeremy introduction cutscene 02")
+
+        # Jeremy's quest check
+        elif self.current_quest.title == "Retrieve Jeremy's Car Parts":
+            if self.current_location == "Blizzard Graveyard":
+
+                self.custom_sleep(1.5)
+                self.start_cutscene("blizzard graveyard jeremy quest cutscene 03")
+
+        elif self.current_quest.title == "Retrieve Jeremy's Car Parts" and self.current_quest.current_progress == 2:
+            if self.current_location == "Abandoned Polar Bunker 01":
+
+                self.custom_sleep(1.5)
+                self.start_cutscene("abandoned polar bunker jeremy quest cutscene 04")
+
+        #Jeremy's quest complete
+        elif self.current_quest.title == "Retrieve Jeremy's Car Parts" and self.current_quest.current_progress == 3:
+            if self.current_location == "Icy Car Repair Depot":
+
+                self.custom_sleep(1.5)
+                self.start_cutscene("jeremy quest complete cutscene 05")       
+
+        # Xavier's disappearance?
+        elif self.current_location == "Permafrost Camp" and self.left_camp_before == True:
+
+            self.custom_sleep(1.5)
+            self.start_cutscene("permafrost camp return cutscene 06")
 
     def xavier_startgame_cutscene_01(self):
         '''The cutscene from the beginning of the game.
@@ -1888,10 +1956,10 @@ class Game:
             
             f"\"Expedition 14 dashed south for [b green]Casablanca Desert Fortress[/b green]. Rumoured to be {'30' if 'C' in self.settings['temp_unit']['Status'] else '54'} degrees warmer...\"",
             "\"Some say there are [orange]geothermal wells[/orange] that warm your hands up and oil wells with infinite supply. Never been there though.\"",
-            "\"[b]You're part of Expedition 13.[/b] Over the decades, there have been close to [i]sixty[/i] expeditions... thousands of souls trying to march down this frozen corridor.\"",
+            "\"[b]You're Expedition 13.[/b] After fourteen left me here, I held out hope to gather enough stragglers to form a thirteenth wave... but nobody else came through. Just you.\"",
 
             SEPARATOR,
-            "\"Most of them just... vanish. Erased by the weather or something worse out on the trail.\"",
+            "\"Over the decades, there have been close to [i]sixty[/i] expeditions... thousands of souls trying to march down this frozen corridor. Most of them vanish.\"",
             "\"Expedition 15 was lost somewhere up in the high mountains—never heard from again. And Expedition 14 left months ago.\"",
 
             SEPARATOR,
@@ -1913,7 +1981,7 @@ class Game:
             "\"Do not break the seal. Do not read whatever is scribbled inside. If the wax fractures, the gate guards treat you as a corpse.\"",
 
             PAUSE,
-            "[1] Take his note and hold onto it"
+            "[1] Take his note - your thumb grazes a faint, waxy texture on the parchment inside"
         ]
 
         self.log_script(part_1)
@@ -1927,7 +1995,7 @@ class Game:
         # handing over the slate, route list, and backpack
         part_2 = [
             SEPARATOR,
-            'He unclips a matte-black e-paper display from his belt, its anodized titanium frame catching the dim gloom.',
+            'He unclips a matte-black e-paper display from his belt, tapping a sensor to register: [dim]EXPEDITION 13 (SOLO)[/dim].',
             f"\"A {self.get_coloured_name('Field Survey Slate & Slate Pen (Unique)', 'Unique')}. Built to survive [red]nine-hundred degrees[/red]. Recharges on a thermal gradient cell anywhere you walk.\"",
             f"\"And a {self.get_coloured_name('Crumpled Route List (Quest Item)', 'Quest Item')}. Only shows the first main leg you will need to reach: [b]Valley Camp 02[/b]. The rest reveals itself once you hit the checkpoint.\"",
             "\"Here, take this old canvas backpack too. You're going to need it to haul your gear out of this wasteland.\"",
@@ -1974,12 +2042,13 @@ class Game:
         self.player.clothing[3] = Item("Flip Flops", "Some rubber flip flops Xavier bought at a gift shop by the beach back before the Ice Age.", "Common", "Clothing Shoes", 50, 50, 1, important_information={"Warmth": 0.005})
 
         self.log("[bold green]✦ you strip the warm layers off his corpse and add the food and matches to your backpack.[/bold green]")
+        self.log("[dim][i]tucked behind his bean bag, your hand knocks a steel flask. oddly, the liquid sloshes unfrozen, though the draft hurries you along.[/i][/dim]")
 
         self.custom_sleep(1.5)
 
         # Setup the quest and add the notes to the slate log
         self.add_slate_log(
-            "XAVIER'S DEATH",
+            "EXPEDITION 13 (SOLO) & XAVIER's DEATH",
             "Xavier died of hypothermia; gave wax credentials, Slate, and Route List to reach Casablanca.",
             "He ingested a thick purple-accented aluminum pen upon death."
         )
@@ -2028,8 +2097,8 @@ class Game:
             SEPARATOR,
             
             "\"I was driving North, back towards my house back when the world was [brown]still normal[/brown].\"",
-            "\"You'd think I'd notice the temperature outside [cyan]dropping[/cyan], but I was too busy watching some [red]YouTube[/red].\"",
-            "\"Didn't even take a glance at the road. Even mechanics and car specialists make mistakes sometimes.\"",
+            "\"I noticed the temperature outside [cyan]dropping[/cyan], and the wave of panic that covered everybody caused someone to bump into my car.\"",
+            "\"They ain't even take a glance at the road. God damn it.\"",
 
             PAUSE,
             "[1] Glance over at the red car's engine over there",
@@ -2104,6 +2173,342 @@ class Game:
         )
 
         self.cutscene_cursor_show()
+
+    def blizzard_graveyard_jeremy_quest_cutscene_03(self):
+        '''When the player reaches the blizzard graveyard with Jeremy's quest active.'''
+
+        part_01 = [
+            "[i]You can feel the souls radiating from the graves. Hundreds of them, if not more.[/i]",
+            "The wind howls through a maze of snow-covered mounds and half-buried industrial wreckage.",
+
+            SEPARATOR,
+
+            "\"Somewhere out here... two connecting rods,\" you murmur, your teeth chattering violently in the gale.",
+            "Squinting through the whiteout, two shapes catch your eye through the drifting snow.",
+
+            SEPARATOR,
+            # selection menu with multiple options
+            CHOICE_START,
+
+            "[1] Head toward the far end to search an overturned transport hauler",
+            "[2] Walk over to a grave mound draped with an oil-stained mechanic's vest",
+
+            CHOICE_END
+        ]
+
+        choice = self.log_script(part_01) #gets the option chosen - and displays different things but leading to the same outcome
+
+        if choice == "1":
+            # searching the vehicle first
+            part_02 = [
+                "You trudge through knee-deep drifts toward the far end of the clearing.",
+                "A massive cargo hauler lies on its side, its engine compartment cracked open and packed with [cyan]blue ice[/cyan].",
+                "Using your hands to chip away the frozen crust, you unbolt an intact [b yellow]metal connecting rod[/b yellow] from the broken block.",
+
+                PAUSE,
+                "[1] Pocket the first rod and look around for the second",
+
+                "Scanning the ground, you spot a trail of frozen oil droplets leading away from the wreck.",
+                "The trail stops at a lonely snow mound marked with a rusted iron tie and a weathered mechanic's vest.",
+                "At the foot of the grave sits an open steel toolbox. Nestled inside the frozen grease rags is the [b yellow]second connecting rod[/b yellow].",
+
+                PAUSE,
+                "[1] Take the second rod and wipe the frost off the metal"
+            ]
+            self.log_script(part_02)
+
+        else:
+            # searching the mechanic's vest grave first
+            part_02 = [
+                "You crunch through the crust toward the lonely mound draped in faded canvas and oil-stained work vest.",
+                "A frozen leather tool pouch sits half-buried in the snow beside the cross marker.",
+                "You pry the stiff leather flap open. Inside, coated in car grease, is a [b yellow]metal connecting rod[/b yellow].",
+
+                PAUSE,
+                "[1] Pocket the first rod and search for where he worked",
+
+                "Looking up from the grave, you notice stiff, frozen bootprints heading toward the far end of the yard.",
+                "They lead directly to an overturned cargo hauler with its hood ripped apart.",
+                "Inside the hauler's exposed engine compartment, right where the deceased mechanic had been working, rests the [b yellow]second connecting rod[/b yellow].",
+
+                PAUSE,
+                "[1] Unseat the second rod from the engine and stow it"
+            ]
+            self.log_script(part_02)
+
+        # add 2 x metal connecting rods to player satchel
+        rod_item = Item(
+            "Metal Connecting Rod",
+            "Heavy forged steel connecting rods salvaged from the Blizzard Graveyard.",
+            "Quest Item",
+            "Quest",
+            1, 1, 2,
+            is_quest_item=True
+        )
+
+        self.add_item_to_inventory(rod_item, "satchel")
+
+        self.log(f"[bold green]✦ you add {self.get_coloured_name('2 x Metal Connecting Rods', 'Quest Item')} to your satchel.[/bold green]")
+
+        self.custom_sleep(1.0)
+
+        # from 0/3 to 2/3
+        self.current_quest.advance_progress(2)
+
+        self.cutscene_cursor_show()
+
+    def abandoned_polar_bunker_jeremy_quest_cutscene_04(self):
+        '''When the player reaches the Abandoned Polar Bunker 01 with Jeremy's quest active and 2/3 progress on the quest.'''
+
+        part_01 = [
+            'Slightly dusty glass double doors grind open against a mountain of compacted snow.',
+            'You step inside the [cyan]cold[/cyan], concrete interior of Polar Bunker 01. The air inside is chilly like the outside, greatly contrasting with the Car Depot.',
+            'At the back end of the room sits an industrial diesel generator, its housing stripped open years ago.',
+            
+            PAUSE,
+            "[1] Walk over to the auxiliary generator block",
+
+            'The heavy backup engine is [cyan]frozen dead[/cyan], its casing cracked wide by expanding ice, and shattering the engine itself into pieces.',
+            f"Stuck deep within the engine is the final piece [yellow]Jeremy[/yellow] described: a heavy, precision-machined steel piston - somehow completely intact.",
+            'You lean against it using your bodyweight and a thick wooden stick you found outside. The wooden stick snaps, but the piston pops loose.',
+
+            PAUSE,
+            f"[1] Extract the {self.get_coloured_name('Machined Piston', 'Quest Item')} and store it",
+
+            "[i green]You breathe a sigh of relief after making sure the piston is not broken.[/i green]"
+
+        ]
+
+        self.log_script(part_01)
+
+        # Add the piston to satchel
+        piston_item = Item(
+            "Machined Piston",
+            "A heavy mechanical piston extracted from a backup generator at the Abandoned Polar Bunker 01.",
+            "Quest Item",
+            "Quest",
+            1, 1, 1,
+            is_quest_item=True
+        )
+
+        self.add_item_to_inventory(piston_item, "satchel")
+
+        self.log(f"[bold green]✦ you add the {self.get_coloured_name('Machined Piston', 'Quest Item')} to your satchel. All 3 parts are collected![/bold green]")
+
+        self.custom_sleep(1.0)
+
+        # Update from 2/3 to 3/3 done
+        self.current_quest.advance_progress(1)
+
+        # player choice of what to do next in the bunker (hinting slightly at the twist at the end)
+        part_02 = [
+            SEPARATOR,
+
+            "With the piston [green]secured[/green], you widen your gaze to the rest of the room.",
+            "To your left, a heavy secondary blast door is sealed tight with an electronic keypad panel flashing [red]red[/red].",
+            "To your right, an old school locker dangles open with the door barely clinging on...",
+
+            SEPARATOR,
+
+            CHOICE_START,
+
+            "[1] Search the locker for anything else useful",
+            "[2] Approach the sealed blast door and inspect the electronic keypad",
+            "[3] Exit and try to get back to [yellow]Jeremy[/yellow] as soon as possible",
+
+            CHOICE_END
+        ]
+
+        choice = self.log_script(part_02)
+
+        if choice == "1":
+            part_03 = [
+                "You rush over to the loose locker and wrench the iron door open.",
+                "Inside, there are only [dim]rusted scrap bolts[/dim], [dim]frozen oil filters[/dim], and [dim]shredded packing foam[/dim]. Nothing of value.",
+                "You turn back toward the [bold]heavy blast door[/bold] across the room, realizing the keypad is the only way deeper.",
+                SEPARATOR
+            ]
+            self.log_script(part_03)
+
+        # Part 4: Keypad Interaction (Guaranteed to fail on Run 1)
+        if choice != "3":
+            part_04 = [
+                "You stand before the reinforced blast door. An [bold cyan]8-digit authorization display[/bold cyan] blinks softly in the dark.",
+                "You have no idea what the code could be.",
+                
+                PAUSE,
+                "[1] Try punching in a random sequence of numbers",
+                
+                "You tap out a quick sequence on the rubberized buttons...",
+                "[bold red]ACCESS DENIED — AUTHORIZATION FAILED.[/bold red]",
+
+                "A harsh mechanical buzzer echoes down the empty corridor. The system locks you out for thirty seconds.",
+                "You press your bare fingers against the cold buttons again. Nothing happens. The keypad is [red]completely unresponsive[/red] to guessing.",
+
+                PAUSE,
+                "[1] Turn away from the locked door and head back south toward [yellow]Jeremy[/yellow]'s depot",
+
+                "The glass doors automatically slide open as you near it. Your feet and body exit back out to the [cyan]cold[/cyan]."
+            ]
+
+            self.log_script(part_04)
+        else:
+            part_04 = [
+                "Your body turns back around towards the howling wind outside.",
+
+                PAUSE,
+                "[1] Walk outside to the [cyan]freezing cold[/cyan] and start heading back to [yellow]Jeremy[/yellow]",
+
+                "The glass doors automatically slide open as you near it. Your feet and body exit back out to the [cyan]cold[/cyan]."
+            ]
+
+            self.log_script(part_04)
+
+        # self.current_quest.title = "Return to Jeremy with Car Parts"
+        # self.current_quest.progress_label = "Ready to Turn In"
+
+        self.cutscene_cursor_show()
+
+    def jeremy_quest_complete_cutscene_05(self):
+        '''When you arrive back at the Icy Car Repair Depot at 3/3 progress (with his components). Gives a reward branch (key or bucket hat.)'''
+
+        part_01 = [
+            "The [brown]corrugated iron door[/brown] groans open as you slide it aside, stepping out of the [cyan]violent gale[/cyan] into the comfortable warmth of the depot.",
+            "[yellow]Jeremy[/yellow] drops his wrench with a sharp metallic clatter, his eyes locking onto your heavy satchel.",
+            "\"You're back... and you actually survived the North? Let me see what you pulled out of the [cyan]ice[/cyan].\"",
+
+            PAUSE,
+            "[1] Unload the two connecting rods and the heavy machined piston onto the workbench",
+
+            "Jeremy's dusty, oily hands trace over the pitted steel of the piston, running his thumb along its clean crown.",
+            "\"I don't believe it. An intact piston and two matching rods... My red baby gonna roar back to life.\"",
+            "A wide, exhausted grin breaks across his [orange]grease-streaked[/orange] face. For the first time, he looks [orange]genuinely human[/orange].",
+            "\"You held up your end of the bargain, kid. And I'll hold up mine. No more eating dry rations in the dark.\"",
+
+            PAUSE,
+            "[1] Accept Jeremy's gratitude and your promised gear",
+        ]
+
+        self.log_script(part_01)
+
+        # add all items back in the player's inventory except the quest items
+        self.player.satchel = [item for item in self.player.satchel if item.item_name not in ["Metal Connecting Rod", "Machined Piston"]]
+
+        # add the fixed rewards of 2 cans of salmon and thin wool pants
+        salmon_item = Item("Can of Salmon", "A switchup to the usual can of tuna. A bit of fishy oil doesn't surprise anyone.", "Uncommon", "Food", 1, 1, 2, is_quest_item=False, important_information={"Food": 3.0})
+        pants_item = Item("Thin Wool Pants", "A pair of durable, thermal-woven wool pants. (+7.5% Warmth)", "Uncommon", "Clothing Bottom", 180, 180, 1, important_information={"Warmth": 0.075})
+        
+        self.add_item_to_inventory(salmon_item, "backpack")
+        
+        # automatically equips pants
+        slot_index = 2 # pants slot
+
+        # temporary variable to store
+        old_pants = self.player.clothing[slot_index]
+        self.player.clothing[slot_index] = pants_item
+
+        # if no equipped pants add to backpack, otherwise equip
+        if old_pants is not None:
+            self.add_item_to_inventory(old_pants, "backpack")
+        else:
+            self.log("[i]You put the new wool pants on.[/i]")
+
+        self.log(f"[bold green]✦ Acquired: {self.get_coloured_name('2 x Can of Salmon', 'Uncommon')} and obtained {self.get_coloured_name('Thin Wool Pants (+7.5% Warmth)', 'Uncommon')}.[/bold green]")
+
+        self.custom_sleep(1.0)
+
+        # choice between bucket hat or key (both have consequences down the line in quests)
+        part_02 = [
+            SEPARATOR,
+            "Jeremy wipes his hands on an oily rag and reaches into his top desk drawer, pulling out two items and slides them out on the wooden table.",
+            "\"Much [pink1]love[/pink1], kid. Here's the options of items you can pick from. Both will help you later on if you use them correctly.\"",
+            
+            SEPARATOR,
+
+            CHOICE_START,
+
+            "[1] Take the [cyan]Knit Bucket Hat[/cyan] (+2.5% Warmth)",
+            "[2] Take [magenta]Jeremy's Key[/magenta] [Unique]",
+
+            CHOICE_END
+        ]
+
+        choice = self.log_script(part_02)
+
+        if choice == "1":
+            hat_item = Item("Knit Bucket Hat", "A thin bucket hat with somewhat of a wool layer on the inside (+2.5% Warmth). Keeps your ears from freezing on the trail.", "Common", "Clothing Head", 100, 100, 1, important_information={"Warmth": 0.025})
+            
+            # equip to head - temporary variable
+            old_head = self.player.clothing[0]
+
+            
+            self.player.clothing[0] = hat_item
+
+            # if some headwear equipped, add to backpack instead
+            if old_head is not None:
+                self.add_item_to_inventory(old_head, "backpack")
+
+            self.log(f"[bold green]✦ You chose the {self.get_coloured_name('Knit Bucket Hat', 'Common')}. Very wise for the ears.[/bold green]")
+            
+            part_03 = [
+                "Jeremy watches you pull the hat down tight.",
+                "\"Sensible choice. Keeps the wind off your ears when you hit a [cyan]snowstorm[/cyan].\"",
+                "\"That hat ain't too strong, but it can certaintly allow you to fight the wind at [light_sky_blue1]higher altitudes[/light_sky_blue1]. Be safe, okay?\"",
+
+                PAUSE,
+                "[1] Nod your head in gratefulness"
+
+            ]
+
+            self.log_script(part_03)
+
+        else:
+            key_item = Item("Jeremy's Key", "An indented brass key with the name Jeremy etched into it. Might be useful to other people later.", "Unique", "Quest", 1, 1, 1, is_quest_item=True, important_information={"key_target": "Polar_Bunker_01_Armory"})
+            self.add_item_to_inventory(key_item, "satchel")
+
+            self.log(f"[bold green]✦ You accepted {self.get_coloured_name('Jeremy\'s Key', 'Unique')} and slid it into your satchel.[/bold green]")
+            
+            part_03 = [
+                "Jeremy watches you pocket the cold [brown]metal[/brown] key with a knowing nod.",
+                "\"That key doesn't keep you [pink1]warm[/pink1], friend. But I heard there are people South that might want this key.\"",
+                "\"There's no need to worry about handing it over if you think the trade is worth it. You won't need it yourself anyways.\"",
+                
+            ]
+            self.log_script(part_03)
+
+        # finish quest
+        final_wrap = [
+            SEPARATOR,
+
+            "\"The road south is long, and the weather's only going to get uglier from here. Take shelter here whenever you loop back, traveler.\"",
+            
+            PAUSE,
+            "[1] Nod farewell to Jeremy and step back out into the [cyan]freezing cold[/cyan]"
+        ]
+        self.log_script(final_wrap)
+
+        # clear current quest
+        self.current_quest = None
+        self.log("[bold gold1]✦ Quest Complete: Jeremy's Car Parts finished successfully![/bold gold1]")
+
+        self.cutscene_cursor_show()
+
+    def permafrost_camp_return_cutscene_06(self):
+        '''Triggered the first time the player gets back to Permafrost Camp.'''
+        
+        return_script = [
+            "You trudge back up the ridge to where Permafrost Camp had been pitched.",
+            "The relentless gale has [i]seemingly[/i] flattened the snowdrifts entirely, scouring the plateau down to hard, blue-white ice.",
+            "A few shredded ribbons of the tent connectors whip wildly from a single buried tent stake, but the hollow space between the rocks is completely empty.",
+            "A brutal whiteout gust hits you square in the chest, forcing you to turn away before the wind blinds you completely.",
+            
+            PAUSE,
+            "[1] Move slightly away (20m) from the tent to a more covered location"
+        ]
+
+        self.log_script(return_script)
+        self.cutscene_cursor_show()
+
     # Template for escape sequences - used for QUOTES in cutscenes "\"Insert quote here\"", but otherwise use "" as normal
     
     def play(self):
@@ -2119,7 +2524,6 @@ class Game:
         # Start opening cutscene
         self.start_cutscene("xavier startgame cutscene 01")
         
-
         while self.player.is_alive() and self.current_location != FINAL_LOCATION: #while player alive and not at destinatioon
 
             self.update_action_menu_status("Closed") #screen refreshes so action menu becomes closed
