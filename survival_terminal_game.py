@@ -62,6 +62,12 @@ SATCHEL_LIMIT = 30
 # How much health you get when eating a food with a certain food gain value
 FOOD_TO_HEALTH_CONVERSION = 0.5 #50%
 
+# Warm food lasting stages (how many stages does warm food stay warm for?)
+WARM_FOOD_LASTING_STAGES = 2
+
+# What shelter is required minimum to have your food become warm (no need to cook the food for it to be warm - but just staying in a warm place)
+WARM_FOOD_SHELTERS = ["Good Shelter", "Decent Shelter"]
+
 # Maps types of shelters to what body temp they get you up to at maximum
 SHELTER_MAX_TEMPERATURES = {
     "Good Shelter":37.0,
@@ -352,10 +358,26 @@ class Game:
                                                     "direction_to" : "Northeast",
                                                     "stages_needed" : 1,
                                                     "requirements" : None
-                                                  }
-                                                
-                                                
-                                                }),
+                                                  },
+
+                                                "Valley Camp 02" : 
+                                                {
+                                                "distance_to" : 100,
+                                                "direction_to" : "West-southwest",
+                                                "stages_needed" : 4,
+                                                "requirements" : None
+                                                },
+
+                                                "Barren Highlands" : 
+                                                {
+                                                "distance_to" : 10,
+                                                "direction_to" : "Northwest",
+                                                "stages_needed" : 1,
+                                                "requirements" : "Headwear"
+                                                },
+                                                }
+
+                                                ),
 
                         #--------------------------------------------------------------------
                         "Icy Car Repair Depot" : Location("Icy Car Repair Depot", 3550, -26.0, "A car repair depot operated by Jeremy, a local survivor. Locals say he's a talent.", "Good Shelter",
@@ -394,6 +416,14 @@ class Game:
                                                     "stages_needed" : 2,
                                                     "requirements" : None
                                                  },
+
+                                                 "Polar Rail Summit Station" : 
+                                                {
+                                                    "distance_to" : 75,
+                                                    "direction_to" : "West",
+                                                    "stages_needed" : 3,
+                                                    "requirements" : ["Headwear", "Any rail pass"]
+                                                },
                                                 }),
 
                         #--------------------------------------------------------------------
@@ -405,6 +435,71 @@ class Game:
                                                     "stages_needed" : 2,
                                                     "requirements" : None
                                                 },
+                                                }),
+
+                        #--------------------------------------------------------------------
+                        "Valley Camp 02" : Location("Valley Camp 02", 3300, -25.0, "Where previous survivors went to shelter from the cold.", "Mediocre Shelter",
+                                                    {"Lakeside Castle Ruins" : 
+                                                     {
+                                                    "distance_to" : 100,
+                                                    "direction_to" : "East-northeast",
+                                                    "stages_needed" : 4,
+                                                    "requirements" : None
+                                                },
+
+                                                "Barren Highlands" : 
+                                                {
+                                                    "distance_to" : 120,
+                                                    "direction_to" : "North",
+                                                    "stages_needed" : 5,
+                                                    "requirements" :"Headwear"
+                                                }
+                                                }),
+
+                        #--------------------------------------------------------------------
+                        "Barren Highlands" : Location("Barren Highlands", 3420, -33.0, "You might find a random rail engineer here, living inside a bunker. It's freezing up here.", "Decent Shelter",
+                                                    {"Lakeside Castle Ruins" : 
+                                                     {
+                                                    "distance_to" : 10,
+                                                    "direction_to" : "Southeast",
+                                                    "stages_needed" : 1,
+                                                    "requirements" : None #to leave barren highlands you don't need headwear
+                                                },
+
+                                                "Valley Camp 02" : 
+                                                {
+                                                    "distance_to" : 120,
+                                                    "direction_to" : "South",
+                                                    "stages_needed" : 5,
+                                                    "requirements" : None #to leave barren highlands you don't need headwear
+                                                },
+
+                                                "Polar Rail Summit Station" : 
+                                                {
+                                                    "distance_to" : 75,
+                                                    "direction_to" : "North",
+                                                    "stages_needed" : 3,
+                                                    "requirements" : ["Headwear", "Any rail pass"]
+                                                },
+                                                }),
+
+                        #--------------------------------------------------------------------
+                        "Polar Rail Summit Station" : Location("Polar Rail Summit Station", 3500, -37.0, "Your hands will freeze off without being inside a warm train, with a train pass.", "No Shelter",
+                                                    {"Blizzard Graveyard" : 
+                                                     {
+                                                    "distance_to" : 75,
+                                                    "direction_to" : "East",
+                                                    "stages_needed" : 3,
+                                                    "requirements" : "Any rail pass" #to leave barren highlands you don't need headwear
+                                                },
+
+                                                "Barren Highlands" : 
+                                                {
+                                                    "distance_to" : 75,
+                                                    "direction_to" : "South",
+                                                    "stages_needed" : 3,
+                                                    "requirements" : "Any rail pass" #to leave barren highlands you don't need headwear
+                                                }
                                                 })
                         }
 
@@ -980,11 +1075,17 @@ class Game:
 
         return visual_rows
 
+    def return_requirements_checked_accessible_locations(self):
+        '''Checks all accessible locations you can get to, and calls other functions to check requirements'''
+
+        pass #WIP - but used in travel input (maybe make it accessible_location's list)
+
     def travel_input(self, locations_list):
         '''Gets the input for where the user needs to go (either an index or a name). Accounts for error messages and printing layouts. Takes accessible locations list as input.'''
 
         all_locations_names = list(self.locations.keys())
         lowercase_all_locations_names = [item.lower() for item in all_locations_names]
+        #locations_list = return requirements checked accessible locations ?
 
         accessible_locations_list_lowercase = [location.lower() for location in locations_list]
 
@@ -1091,6 +1192,11 @@ class Game:
         # update their location
         self.update_location(desired_location)
 
+        # print(f"DEBUG: Old location was {origin_location}")
+        # print(f"DEBUG: New location is {self.current_location}")
+        # print(f"DEBUG: left_camp_before is now {self.left_camp_before}")
+        # input("Press Enter to continue...")
+
         #re-set current location info since we have changed location
         current_location_info = self.locations[self.current_location]
 
@@ -1099,18 +1205,127 @@ class Game:
         self.randomise_weather()
         self.update_feels_like_temp()
 
-        if self.current_location != "Permafrost Camp": #to activate xavier's cutscene - update once player has left the spawn
+        if origin_location == "Permafrost Camp": #to activate xavier's cutscene - update once player has left the spawn
             self.left_camp_before = True
-
         self.check_quest_triggers() # check if you need to end or start any quests at your new location
 
     def display_top_info(self):
         '''Within the interface, displays specifically the top row - including the day counter, weather, stage counter, temperature and location.'''
         top_row = Columns([Panel(f"Day {self.day} | {self.current_stage} | {self.formatted_date}", border_style=TOP_INFO_BORDERS, expand=False),
                            Panel(f"Currently at {self.current_location}", border_style=TOP_INFO_BORDERS, expand=False),
-                           Panel(f"{self.get_weather_symbol()} {self.temperature_convert(self.feels_like_temp, self.settings["temp_unit"]["Status"])}", width=14, border_style=TOP_INFO_BORDERS, expand=False)])
+                           Panel(f"{self.get_weather_symbol()} {self.temperature_convert(self.feels_like_temp, self.settings["temp_unit"]["Status"])}", width=14, border_style=TOP_INFO_BORDERS, expand=False)]) 
+        
+        #one row, accounting for the top and bottom
+        location_description_banner = Panel.fit(f"[i dim]{self.locations[self.current_location].description}[/i dim]", height=3, border_style=TOP_INFO_BORDERS)
 
         print(top_row)
+
+        print(location_description_banner)
+
+    def display_node_map_visual(self):
+        '''Displays a node map where you can physically see the locations (that you can currently access at your node) of each of the nodes on a map.'''
+
+        # Note - map is slightly abstracted, and does not have support for NE, SW or NNE etc... but does display the exact direction inside the node itself
+
+        current_location = self.current_location
+
+        #lowercase version - note i dnidnt use emojis due to a weird visual bug with the boxes
+        display_arrows = {
+            "north": "[cyan]▲ N[/cyan]",
+            "northeast": "[cyan]▲NE[/cyan]",
+            "northwest": "[cyan]▲NW[/cyan]",
+            "north-northwest": "[cyan]▲NNW[/cyan]",
+            "north-northeast": "[cyan]▲NNE[/cyan]",
+
+            "south": "[cyan]▼ S[/cyan]",
+            "southeast": "[cyan]▼SE[/cyan]",
+            "southwest": "[cyan]▼SW[/cyan]",
+            "south-southeast": "[cyan]▼SSE[/cyan]",
+            "south-southwest": "[cyan]▼SSW[/cyan]",
+
+            "east": "[cyan]► E[/cyan]",
+            "east-southeast": "[cyan]►ESE[/cyan]",
+            "east-northeast": "[cyan]►ENE[/cyan]",
+
+            "west": "[cyan]◄ W[/cyan]",
+            "west-northwest": "[cyan]◄WNW[/cyan]",
+            "west-southwest": "[cyan]◄WSW[/cyan]"
+        }
+
+        current_accessible_locations = self.locations[current_location].accessible_locations
+
+        north_list = []
+        south_list = []
+        east_list = []
+        west_list = []
+
+        for location_name, location_data in current_accessible_locations.items(): #returns dictionary items for the location you want to get to
+            direction_to_location = location_data["direction_to"].lower().strip() #get the direction you need to go to get to that location
+
+            arrow_display = display_arrows.get(direction_to_location, "No direction found") #finds the arrow display for that 
+
+            # adds a panel (a visual box) for each specific node and used to display later
+            display_text = f"[bold white]{location_name}[/bold white]\n[cyan]{arrow_display} ({location_data['distance_to']} km)[/cyan]"
+            display_panel = Panel(display_text, expand=False, border_style="cyan") #30 widht prevents weird box widths
+
+            if "north" in direction_to_location: #if direction_to includes n (north)
+                north_list.append(display_panel)
+            elif "south" in direction_to_location: #if direction_to includes s (south)
+                south_list.append(display_panel)
+
+            elif "east" in direction_to_location: #east and west have only one option
+                east_list.append(display_panel)
+            elif "west" in direction_to_location:
+                west_list.append(display_panel)
+
+            else:
+                # if direction isn't valid somehow, adds to north list
+                center_list = north_list
+                center_list.append(display_panel)          
+
+        current_location_panel = Panel(
+            f"[bold yellow]YOU ARE HERE[/bold yellow]\n[bold white]{current_location}[/bold white]\n[dim]Distance left: {self.distance_left} km[/dim]",
+            expand=False,
+            border_style="bold yellow"
+        )
+
+        # map parts is like a list of the rows you want to display from top to bottom
+        # adds the top things like the title, then the top rows, and middle and finally bottom nodes
+        map_parts = []
+
+        map_parts.append(Align.center("[bold red]Map of accessible locations[/bold red]"))
+        map_parts.append("")
+        
+        # finally, after adding the panels (visuals) into the lists, display all of them
+
+        if north_list:
+            for panel in north_list:
+                map_parts.append(Align.center(panel))
+                map_parts.append(Align.center("[cyan]▲[/cyan]")) #arrow pointing north
+
+        middle_row = [] #for mdidle of screen
+
+        if west_list:
+            middle_row.append(Group(*west_list)) #special syntax used -- unpack arguments (basically pass in the list items instead of the list itself)
+        
+        middle_row.append(current_location_panel) #display the current location visual in the middle of the screen 
+        
+        if east_list:
+            middle_row.append(Group(*east_list)) #unpack arguments (basically pass in the list items instead of the list itself)
+
+        map_parts.append(Align.center(Columns(middle_row, padding=4)))
+
+        if south_list:
+            for panel in south_list:
+                map_parts.append(Align.center("[cyan]▼[/cyan]")) #arrow pointing south
+                map_parts.append(Align.center(panel))
+
+        self.clear_screen()
+        print(Panel(Group(*map_parts), border_style=TOP_INFO_BORDERS, title="[dim]Map[/dim]", title_align="left"))
+        
+        print("\n[dim]Press Enter to return to action menu [/dim]")
+        input()
+        # when you press enter, it leaves the subroutine and goes back to the menu
 
     def display_sidebar(self):
         '''Within the interface, displays the sidebar - which includes the "buttons" to open the inventory, clothing menu and open the actions menu.'''
@@ -1652,7 +1867,10 @@ class Game:
             "5":"settings",
             "settings":"settings",
 
-            "6":"close",
+            "6":"map",
+            "map":"map",
+
+            "7":"close",
             "close":"close"
 
         }
@@ -1672,7 +1890,8 @@ class Game:
             print("  [3] Rest / Wait")
             print("  [4] View Detailed Stats")
             print("  [5] Open Settings")
-            print("  [6] Close Action Menu")
+            print("  [6] Open Node Map")
+            print("  [7] Close Action Menu")
 
             if error_message != "": #if there was an error in the last loop:
                 print(f"\n[bold red]{error_message}[/bold red]")
@@ -1703,6 +1922,9 @@ class Game:
 
         elif action == "settings":
             self.open_settings_menu()
+
+        elif action == "map":
+            self.display_node_map_visual()
 
         elif action == "close":
             self.update_action_menu_status("Closed")
@@ -1770,6 +1992,7 @@ class Game:
         
         Both [pause] and [choice] create new lines after, so no need to make a SEPARATOR after that.'''
 
+        # if notation is incorrect it won't run
 
         # used for single and multi action choices
         pause_next_line = False
@@ -1779,6 +2002,12 @@ class Game:
 
         for line in script:
 
+            # detect when you start gathering choices using [choice]
+            if line.strip().lower() == "[choice]":
+                collecting_choices_from_script = True
+                current_choices = [] # reset current choices
+                continue # skip printing "[choice]" literally to stop CRASHING
+            
             # gathers the option displays for between [choice] and [/choice]
             if collecting_choices_from_script:
                 if line.strip().lower() == "[/choice]": #ending option collecting
@@ -1789,6 +2018,7 @@ class Game:
                     selected_option = current_choices[int(chosen_option) - 1] #chosen option is the 1 based index
 
                     self.log(f"{selected_option}\n[bold green]Action Selected[/bold green]\n") 
+                    continue #prevent 
 
                 else:
                     current_choices.append(line) #adds the line to current choices, but skips printing the line to the dialogue box
@@ -1879,9 +2109,16 @@ class Game:
         '''Checks if the player's current location completes, advances or starts a new quest.
         Add conditions here for TRAVEL only (if player reaches a new location). For action quests, where the player does an action in a location, it can be handled within a cutscene.'''
 
-        if self.current_quest is None:
-            return None #if no quest currently, exit the function
+        # if self.current_quest is None: - redundant
+        #     return None #if no quest currently, exit the function
 
+        # Xavier's disappearance? (independent of quests)
+        if self.current_location == "Permafrost Camp" and self.left_camp_before == True: 
+            # Reset the flag so it only triggers the very first time you come back
+            self.left_camp_before = False 
+            self.custom_sleep(1.5)
+            self.start_cutscene("permafrost camp return cutscene 06")
+                
         # Tutorial quest check (check if completed, and start the quest)
         if self.current_quest.title == "Reach the Icy Car Repair Depot":
             if self.current_location == "Icy Car Repair Depot": #if quest condition met and complete:
@@ -1899,7 +2136,6 @@ class Game:
         # Jeremy's quest check
         elif self.current_quest.title == "Retrieve Jeremy's Car Parts":
             if self.current_location == "Blizzard Graveyard":
-
                 self.custom_sleep(1.5)
                 self.start_cutscene("blizzard graveyard jeremy quest cutscene 03")
 
@@ -1915,13 +2151,7 @@ class Game:
 
                 self.custom_sleep(1.5)
                 self.start_cutscene("jeremy quest complete cutscene 05")       
-
-        # Xavier's disappearance?
-        elif self.current_location == "Permafrost Camp" and self.left_camp_before == True:
-
-            self.custom_sleep(1.5)
-            self.start_cutscene("permafrost camp return cutscene 06")
-
+        
     def xavier_startgame_cutscene_01(self):
         '''The cutscene from the beginning of the game.
         
@@ -2097,13 +2327,12 @@ class Game:
             SEPARATOR,
             
             "\"I was driving North, back towards my house back when the world was [brown]still normal[/brown].\"",
-            "\"I noticed the temperature outside [cyan]dropping[/cyan], and the wave of panic that covered everybody caused someone to bump into my car.\"",
-            "\"They ain't even take a glance at the road. God damn it.\"",
+            "\"I noticed the temperature outside [cyan]dropping[/cyan], and instantly panicked.\"",
 
             PAUSE,
             "[1] Glance over at the red car's engine over there",
 
-            "\"Oh... you're looking at the engine. Well, on the way back, the car crashed into the side of a [dark green]pine tree[dark green].\"",
+            "\"Oh... you're looking at the engine. Well, on the way back, I sped up to try to get back safely, but the car crashed into the side of a [dark green]pine tree[dark green].\"",
             "\"My baby's been missing some components ever since she got [red]damaged[/red]. The piston flew out after I spun out of control, and the internals are scrap.\"",
 
             PAUSE,
@@ -2154,7 +2383,7 @@ class Game:
             SEPARATOR,
             "\"So... Are you down to help me? It's your call.\"",
 
-            "[i]His hands [b]grip tightly[/b] onto the latch, seemingly forcing you to say yes - or trapping you in with him.",
+            "[i]His hands [b]grip tightly[/b] onto the latch, seemingly forcing you to say yes - or trapping you in with him.[/i]",
 
             PAUSE,
             "[1] Accept his quest and head north to retreive Jeremy's car parts"
@@ -2187,6 +2416,7 @@ class Game:
             "Squinting through the whiteout, two shapes catch your eye through the drifting snow.",
 
             SEPARATOR,
+
             # selection menu with multiple options
             CHOICE_START,
 
