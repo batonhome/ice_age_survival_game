@@ -1870,7 +1870,10 @@ class Game:
             "6":"map",
             "map":"map",
 
-            "7":"close",
+            "7":"tutorial",
+            "tutorial":"tutorial",
+
+            "8":"close",
             "close":"close"
 
         }
@@ -1891,7 +1894,8 @@ class Game:
             print("  [4] View Detailed Stats")
             print("  [5] Open Settings")
             print("  [6] Open Node Map")
-            print("  [7] Close Action Menu")
+            print("  [7] Game Mechanics Explanation")
+            print("  [8] Close Action Menu")
 
             if error_message != "": #if there was an error in the last loop:
                 print(f"\n[bold red]{error_message}[/bold red]")
@@ -1926,6 +1930,9 @@ class Game:
         elif action == "map":
             self.display_node_map_visual()
 
+        elif action == "tutorial":
+            self.open_tutorial_menu()
+
         elif action == "close":
             self.update_action_menu_status("Closed")
             self.refresh_screen()
@@ -1934,6 +1941,102 @@ class Game:
         '''Sleeps IF self.typewriter_override is off.'''
         if not self.typewriter_override:
             sleep(duration)
+
+    def open_tutorial_menu(self):
+        '''Opens a tutorial menu with "pages" to scroll past to explain the game without using cutscenes (more directly). Currently does key mechanics like:
+        Body temperature
+        Movement
+        Food
+        Inventory
+        '''
+
+        # Sets up pages and their content (each tuple is one page)
+        pages = [
+            (
+                "[bold cyan]Movement[/bold cyan]", 
+                "• In Expedition 13, you can [b red]only[/b red] move between [cyan]nodes (locations)[/cyan]. You cannot move freely.",
+                "• Travel takes a certain amount of [yellow]stages[/yellow] in the day ([yellow]time[/yellow]), as well as consuming your [brown]food bar[/brown] and exposing you to the outside cold - determined differently depending on factors.",
+                "[i](Every 25 km or less of travel takes 1 more stage and consumes 1 more food bar.)[/i]",
+                "• You can open the node map using [bold]6[/bold] in the action menu in order to check the locations you can get to from your current location."
+            ),
+            (
+                "[bold cyan]Body Temperature & Shelter[/bold cyan]",
+                "• Travelling exposes you to the outside environment temperature, which is influenced by the randomised [cyan]weather[/cyan], the [yellow]time of day[/yellow] and the location's [i]hardcoded[/i] average temperature.",
+                "[i]For example, if a location averages -10°C normally, but it is nighttime and there is a snowstorm, then the temperature outside becomes -17°C.[/i]",
+
+                "• Different locations have different [magenta]shelter ratings[/magenta], ranging from [red]No Shelter[/red] to [green]Great Shelter[/green].",
+                "• If you have [red]no shelter[/red] (like travelling, or staying at an exposed location), your body temperature will try to match the current environment temperature each stage that passes [i]using Newton's law of Cooling[/i].",
+                "• Otherwise, [b]any[/b] type of shelter (even poor shelters) will prevent your body temperature from dropping, but will cap out or stabilise your body temperature at a fixed temperature.",
+                "[i]For example, if you are at a Poor Shelter, your body temperature will decrease or increase and stabilise at 31.5°C, [b red]regardless[/b red] of the outside temperature.[/i]",
+
+                "• Being too [cyan]cold[/cyan] leads to [bold red]hypothermia[/bold red], and depending on the severity, you can drain food faster while shivering, or take damage due to frostbite (negative effects each stage unless temperature is increased).",
+                "• Equipping clothing into their slots increases the [pink1]warmth stat[/pink1], which slows down how fast your temperature drops while not in a shelter. It is [green]additive[/green] across clothing."
+            ),
+            (
+                "[bold cyan]Food and Health[/bold cyan]",
+                "• You have a maximum of [bold red]10 health[/bold red] and [bold brown]food bars[/bold brown].",
+                "• As you travel, your food bar depletes according to the distance and stages it would need to complete the journey.",
+                "[i]Note: specifics of food noted in the travel section[/i]",
+
+                "• Whenever your food bar is completely empty (meaning your body ran out of energy) and an action or anything requires food, it digs into your [bold green]health bar[/bold green] instead.",
+                "• [yellow]Resting[/yellow] is an action you can do that advances 1 day whilst consuming 1 food bar and [green]healing[/green] for 3 hearts (maximum)...",
+                "[i]...though the hearts healed depend on how much food you have to repair muscles, and may even drain your health if you sleep while starving.[/i]",
+
+                "• When you consume food, it replenishes your food bar based on the type of food, but it also [green]heals health[/green] equal to the food value divided by 2 (then rounded down)."
+            ),
+            (
+                "[bold cyan]Inventory[/bold cyan]",
+                "• Items collected are automatically sorted into two inventories: the [yellow]backpack[/yellow], and [magenta]quest satchel[/magenta].",
+                "• Whenever an important [magenta]quest item[/magenta] (needed for progression) is obtained, it automatically sorts into the quest satchel, which prevents the item from being dropped or destroyed (stops softlocking).",
+                "• Otherwise, survival items like spare clothing, food and other tools are put into an [yellow]8-slot backpack[/yellow], storing your other items and are able to be discarded.",
+                "• Most items cannot be directly [red]used[/red] in the inventory. Instead, they are used contextually within [cyan]actions or cutscenes[/cyan]."
+            ),
+            (
+                "[bold cyan]Locations and Cutscenes[/bold cyan]",
+                "• Most locations contain [bold yellow]cutscenes[/bold yellow], which activate immediately when you arrive there.",
+                "• [orange]NPCs[/orange] live at certain locations and offer you quests, which in exchange, provide [magenta]special items[/magenta] which might be useful later.",
+                "• Accessing / getting to certain locations has [cyan]requirements[/cyan], like item requirements, body temperature or other constraints."
+            )
+        ]
+
+        # index
+        current_page = 0
+
+        total_pages_index = len(pages) - 1
+
+        error_message = ""
+
+        while True:
+            self.refresh_screen()
+
+            if error_message != "":
+                print(f"[bold red]{error_message}[/bold red]\n")
+
+            title, *explanation = pages[current_page] #1st line is the title, the rest the explanation (*explanation makes it a list of things inside instead of one big thing)
+
+            print(title, end="\n\n") #2 lines then bulletpoints
+
+            for line in explanation:
+                print(line, end="\n\n") #2 line breaks
+
+            print(f"\n[green]Currently on page {current_page + 1} out of {total_pages_index + 1}[/green] \n[yellow]Choose to go next page (N), exit (E) or go to the previous page (P). [/yellow]")
+
+            choice = input().upper().strip()
+
+            if choice == "E":
+                break #exit while loop and therefore exit the subroutine
+
+            elif choice == "N":
+                if current_page != total_pages_index:
+                    current_page += 1
+                # only go next page if the index works
+                
+            elif choice == "P":
+                if current_page != 0:
+                    current_page -= 1
+
+            else:
+                error_message = "Not a valid option."
 
     '''Cutscenes Setup'''
 
